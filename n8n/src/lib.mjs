@@ -16,6 +16,9 @@ export const CREDENTIALS = {
 
 export const ROLES = ["admin", "media_buyer", "viewer"];
 
+// Frontend API_URL = https://<n8n>/webhook/zms  (Next rewrites /api/* → ${API_URL}/api/*)
+export const WEBHOOK_PREFIX = "zms";
+
 const uuid = (seed) => {
   const h = createHash("sha1").update(seed).digest("hex");
   return `${h.slice(0, 8)}-${h.slice(8, 12)}-4${h.slice(13, 16)}-a${h.slice(17, 20)}-${h.slice(20, 32)}`;
@@ -39,7 +42,7 @@ const ifTrue = (expr) => ({
 
 const jsonResponse = (bodyExpr, statusExpr) => ({
   respondWith: "text",
-  responseBody: `={{ JSON.stringify(${bodyExpr}) }}`,
+  responseBody: `={{ ${bodyExpr} === undefined ? '' : JSON.stringify(${bodyExpr}) }}`,
   options: {
     responseCode: `={{ ${statusExpr} }}`,
     responseHeaders: {
@@ -62,7 +65,9 @@ const jsonResponse = (bodyExpr, statusExpr) => ({
  *                              Must `return { status?, body }`.
  * @param {string} [def.onDbError] Code-node body run when the query fails; same return shape.
  * @param {string} [def.validate] Code-node body run before the query. In scope: user, req and
- *                              the helpers. Return null when valid, else { status, detail }.
+ *                              the helpers. Return fail(status, detail) / invalid(...) to reject;
+ *                              any other return value is exposed to SQL params and Shape as `input`
+ *                              ($('Validate').first().json.value).
  */
 export function endpoint(def) {
   const name = `ZMS API · ${def.method} ${def.path.replace(/:(\w+)/g, "{$1}")}`;
@@ -84,10 +89,12 @@ export function endpoint(def) {
     name: "Webhook",
     type: "n8n-nodes-base.webhook",
     typeVersion: 2,
-    webhookId: uuid(`webhook ${def.method} ${def.path}`),
+    // n8n serves webhooks with :params at /webhook/<webhookId>/<path>. Sharing one webhookId and
+    // prefixing static paths with the same segment puts every endpoint under /webhook/zms/api/...
+    webhookId: WEBHOOK_PREFIX,
     parameters: {
       httpMethod: def.method,
-      path: def.path.replace(/^\//, ""),
+      path: /:\w+/.test(def.path) ? def.path.replace(/^\//, "") : `${WEBHOOK_PREFIX}${def.path}`,
       responseMode: "responseNode",
       options: {},
     },
@@ -219,8 +226,8 @@ export function endpoint(def) {
       parameters: {
         jsCode: [...prelude, def.validate]
           .join("\n")
-          .replace(/^/, "const error = (() => {\n")
-          .concat("\n})();\nreturn [{ json: error ? { error } : {} }];"),
+          .replace(/^/, "const r = (() => {\n")
+          .concat("\n})();\nreturn [{ json: r && r.__fail ? { error: r.__fail } : { value: r ?? null } }];"),
       },
     });
     link(last, validate, 0);
@@ -228,6 +235,7 @@ export function endpoint(def) {
     link(validate, valid);
     link(valid, respondError.name, 1);
     last = valid;
+    prelude.push("const input = $('Validate').first().json.value;");
   }
 
   let shapeInput = last;

@@ -14,7 +14,7 @@ const HUMAN_CONTROL_RULES = [
   "Every consequential action is recorded in the audit log.",
 ];
 
-const CLIENT_COLUMNS = `
+export const CLIENT_COLUMNS = `
   c.id, c.name, c.slug, c.meta_ad_account_id, c.google_ads_customer_id, c.google_lsa_customer_id, c.ghl_location_id,
   c.avg_job_value, c.close_rate, c.gross_margin_pct, c.max_ad_cost_share, c.setter_fee_per_appt, c.default_service, c.trade, c.booking_system,
   c.meta_campaign_filter, c.meta_pixel_id, c.cpl_target_green, c.cpl_target_red, c.is_active, c.created_at`;

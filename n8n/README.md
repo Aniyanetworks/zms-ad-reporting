@@ -6,7 +6,9 @@ the Next.js frontend unchanged. Data stays in the existing Supabase project.
 ## How the frontend reaches n8n
 
 The frontend calls `/api/*`, which `next.config.ts` rewrites to `${API_URL}/api/*`.
-n8n serves production webhooks at `${N8N_URL}/webhook/<path>`, so every endpoint is
+n8n serves webhooks with path params at `/webhook/<webhookId>/<path>`, so every workflow
+shares webhookId `zms` and static paths are prefixed `zms/`: every endpoint lives under
+`${N8N_URL}/webhook/zms/api/...` and the frontend uses `API_URL=${N8N_URL}/webhook/zms`. Each endpoint is
 a Webhook node whose path is `api/<route>` (path params use n8n's `:param` syntax,
 e.g. `api/clients/:slug/campaigns`).
 
