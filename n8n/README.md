@@ -66,8 +66,8 @@ Status: ☐ todo · ◐ built · ✓ parity-verified & routed
 | 2 | GET | /api/health | health.py | 1 | ◐ |
 | 3 | GET | /api/me | me.py | 1 | ◐ |
 | 4 | GET | /api/clients | clients.py | 1 | ◐ |
-| 5 | POST | /api/clients | clients.py | 2 | ☐ |
-| 6 | PATCH | /api/clients/{client_id} | clients.py | 2 | ☐ |
+| 5 | POST | /api/clients | clients.py | 2 | ◐ |
+| 6 | PATCH | /api/clients/{client_id} | clients.py | 2 | ◐ |
 | 7 | GET | /api/overview | overview.py | 1 | ◐ |
 | 8 | GET | /api/today | today.py | 1 | ☐ |
 | 9 | GET | /api/clients/{slug}/plays | today.py | 1 | ☐ |
@@ -79,10 +79,10 @@ Status: ☐ todo · ◐ built · ✓ parity-verified & routed
 | 15 | GET | /api/clients/{slug}/campaigns/{campaign_id}/adsets | campaigns.py | 1 | ☐ |
 | 16 | GET | /api/clients/{slug}/adsets/{adset_id}/ads | campaigns.py | 1 | ☐ |
 | 17 | GET | /api/services | services.py | 1 | ☐ |
-| 18 | GET | /api/service-targets | service_targets.py | 1 | ☐ |
-| 19 | PUT | /api/service-targets | service_targets.py | 2 | ☐ |
-| 20 | DELETE | /api/service-targets/{service}/{platform} | service_targets.py | 2 | ☐ |
-| 21 | POST | /api/service-targets/reseed | service_targets.py | 2 | ☐ |
+| 18 | GET | /api/service-targets | service_targets.py | 1 | ◐ |
+| 19 | PUT | /api/service-targets | service_targets.py | 2 | ◐ |
+| 20 | DELETE | /api/service-targets/{service}/{platform} | service_targets.py | 2 | ◐ |
+| 21 | POST | /api/service-targets/reseed | service_targets.py | 2 | ◐ |
 | 22 | GET | /api/clients/{slug}/funnel | funnel.py | 1 | ☐ |
 | 23 | GET | /api/clients/{slug}/google-ads | google_ads.py | 1 | ☐ |
 | 24 | GET | /api/portfolio | actions.py | 1 | ☐ |
@@ -100,7 +100,7 @@ Status: ☐ todo · ◐ built · ✓ parity-verified & routed
 | 36 | GET | /api/integrations | integrations.py | 1 | ☐ |
 | 37 | POST | /api/integrations/run | integrations.py | 3 | ☐ |
 | 38 | POST | /api/integrations/propose-tracking | integrations.py | 4 | ☐ |
-| 39 | GET | /api/sync/status | sync.py | 1 | ☐ |
+| 39 | GET | /api/sync/status | sync.py | 1 | ◐ |
 | 40 | POST | /api/sync/trigger | sync.py | 4 | ☐ |
 | 41 | GET | /api/setters/leaderboard | setters.py | 1 | ☐ |
 | 42 | GET | /api/audit-log | audit.py | 1 | ☐ |
