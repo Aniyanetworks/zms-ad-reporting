@@ -52,6 +52,14 @@ const expectedCpl = (rows, tg, clientGreen, clientRed) => {
 const fail = (status, detail) => ({ __fail: { status, detail } });
 const isDate = (s) => typeof s === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));
 const invalid = (loc, msg, type = 'value_error') => fail(422, [{ type, loc, msg }]);
+// Required start/end query dates → fail() or null.
+const requireRange = (q) => {
+  for (const k of ['start', 'end']) {
+    if (!q[k]) return invalid(['query', k], 'Field required', 'missing');
+    if (!isDate(q[k])) return invalid(['query', k], 'Input should be a valid date', 'date_from_datetime_parsing');
+  }
+  return null;
+};
 
 // Minimal pydantic: spec = { field: { type: 'str'|'num'|'bool', required?, nullable?, min?, max?,
 // pattern?, default?, ge?, le?, int? } }. Unknown keys are rejected (extra="forbid") unless allowExtra; strings are capped at 500 chars

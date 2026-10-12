@@ -18,12 +18,23 @@ const req = {
 };
 const user = { id: "00000000-0000-0000-0000-000000000000", email: "selftest@example.com", role: "admin", full_name: null };
 
+// Request bodies for write endpoints (by workflow file name). Writes run under EXPLAIN:
+// planned and type-checked, never executed.
+const BODY = {
+  "clients-create": { name: "Selftest", slug: "selftest" },
+  "clients-update": { name: "Selftest" },
+  "service-targets-put": { service: "Selftest", platform: "meta", cpl_green: 50 },
+  "recommendations-bulk-approve": { ids: [1, 2] },
+};
+
 const cases = [];
 for (const f of readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsWith("_")).sort()) {
   const wf = JSON.parse(readFileSync(join(dir, f), "utf8"));
   const hook = wf.nodes.find((n) => n.name === "Webhook");
   const query = wf.nodes.find((n) => n.name === "Query");
-  if (!query || hook.parameters.httpMethod !== "GET") continue;
+  if (!query) continue;
+  const write = hook.parameters.httpMethod !== "GET";
+  req.body = BODY[f.replace(/.json$/, "")] ?? {};
   let input = null;
   const validate = wf.nodes.find((n) => n.name === "Validate");
   const $ = (name) => ({ first: () => ({ Webhook: { json: req }, "Build user": { json: { user } }, Validate: { json: { value: input } } })[name] });
@@ -34,7 +45,7 @@ for (const f of readdirSync(dir).filter((f) => f.endsWith(".json") && !f.startsW
   }
   const expr = query.parameters.options?.queryReplacement;
   const params = expr ? new Function("$", `return ${expr.replace(/^=\{\{\s*/, "").replace(/\s*\}\}$/, "")};`)($) : [];
-  cases.push({ name: wf.name, sql: query.parameters.query, params });
+  cases.push({ name: wf.name, sql: (write ? "explain " : "") + query.parameters.query, params });
 }
 
 // Canary: must FAIL on every run, proving failures are reported.
@@ -54,7 +65,9 @@ const workflow = {
     { id: "st-4", name: "Report", type: "n8n-nodes-base.code", typeVersion: 2, position: [660, 0],
       parameters: { jsCode: [
         "const cases = $('Cases').all();",
-        "const out = $input.all().map((it, i) => ({ name: cases[it.pairedItem?.item ?? i]?.json.name, ok: !it.json.error, error: it.json.error ? (it.json.error.message || JSON.stringify(it.json.error)) : null }));",
+        "const by = new Map(cases.map((c, i) => [i, { name: c.json.name, ok: true, error: null }]));",
+        "for (const it of $input.all()) { const i = it.json.error?.context?.itemIndex ?? (Array.isArray(it.pairedItem) ? it.pairedItem[0].item : it.pairedItem?.item); const r = by.get(i); if (r && it.json.error) { r.ok = false; r.error = it.json.error.message || JSON.stringify(it.json.error); } }",
+        "const out = [...by.values()];",
         "return [{ json: { total: out.length, failed: out.filter((o) => !o.ok).length, results: out } }];",
       ].join("\n") } },
   ],
@@ -66,4 +79,4 @@ const workflow = {
   settings: { executionOrder: "v1" },
 };
 writeFileSync(join(dir, "_selftest.json"), JSON.stringify(workflow, null, 2) + "\n");
-console.log(`selftest: ${cases.length} read queries`);
+console.log(`selftest: ${cases.length} queries (writes under EXPLAIN)`);

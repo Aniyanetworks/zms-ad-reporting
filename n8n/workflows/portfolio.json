@@ -1,0 +1,434 @@
+{
+  "name": "ZMS API · GET /api/portfolio",
+  "nodes": [
+    {
+      "id": "9f2c1747-69c8-4469-ab5e-e78a623500e7",
+      "position": [
+        0,
+        0
+      ],
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "zms",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "zms/api/portfolio",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "1fc72ddc-ae94-4ce6-aa05-3547e60d6dde",
+      "position": [
+        220,
+        0
+      ],
+      "name": "Read token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const m = /^Bearer\\s+(.+)$/i.exec(($json.headers || {}).authorization || '');\nreturn [{ json: m ? { token: m[1].trim() } : { error: { status: 401, detail: 'Missing token' } } }];"
+      }
+    },
+    {
+      "id": "3bd7de0e-a2b3-48bf-a632-2599072cf767",
+      "position": [
+        440,
+        0
+      ],
+      "name": "Has token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1fdb5ee6-9b3c-4627-a438-e557c9358805",
+              "leftValue": "={{ !$json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "086a7891-903a-49e7-aa9d-9ce1f358d9c4",
+      "position": [
+        660,
+        0
+      ],
+      "name": "Verify JWT",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "jwtAuth": {
+          "id": "VO3CX2JfTZ8fKIez",
+          "name": "ZMS Supabase JWT (public key)"
+        }
+      },
+      "parameters": {
+        "operation": "verify",
+        "token": "={{ $json.token }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "15b1015c-3235-4ddb-a57f-cb1902c55f03",
+      "position": [
+        880,
+        200
+      ],
+      "name": "Token error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const e = $json.error;\nconst msg = (e && (e.message || e.description)) || (typeof e === 'string' ? e : 'invalid token');\nreturn [{ json: { error: { status: 401, detail: `Invalid token: ${msg}` } } }];"
+      }
+    },
+    {
+      "id": "b57918ca-403c-4253-a412-c11a308508b5",
+      "position": [
+        1100,
+        0
+      ],
+      "name": "Load profile",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "credentials": {
+        "postgres": {
+          "id": "UmpkC3NkKcg32kNA",
+          "name": "ZMS Supabase Postgres"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select coalesce((select to_jsonb(p) from (select role, full_name from profiles where id = $1::uuid) p), '{}'::jsonb) as profile",
+        "options": {
+          "queryReplacement": "={{ [($json.payload ?? $json).sub] }}"
+        }
+      }
+    },
+    {
+      "id": "b8b5e92a-5cd8-4a86-aa4d-33f65fe3792c",
+      "position": [
+        1320,
+        0
+      ],
+      "name": "Build user",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const v = $('Verify JWT').first().json;\nconst claims = v.payload ?? v;\nconst aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];\nif (!aud.includes('authenticated')) return [{ json: { error: { status: 401, detail: 'Invalid token: Invalid audience' } } }];\nconst p = $json.profile || {};\nconst role = [\"admin\",\"media_buyer\",\"viewer\"].includes(p.role) ? p.role : 'viewer';\nconst user = { id: claims.sub, email: claims.email ?? null, role, full_name: p.full_name ?? null };\nreturn [{ json: { user } }];"
+      }
+    },
+    {
+      "id": "bd5d564d-1877-48e8-ae4d-a864ad136d06",
+      "position": [
+        1540,
+        0
+      ],
+      "name": "Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1fdb5ee6-9b3c-4627-a438-e557c9358805",
+              "leftValue": "={{ !$json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "fe2186d9-4bcb-40b1-a541-cfc9a6073b0f",
+      "position": [
+        1760,
+        300
+      ],
+      "name": "Respond error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ { detail: $json.error.detail } === undefined ? '' : JSON.stringify({ detail: $json.error.detail }) }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "4006ae27-2ed1-4feb-adcd-222fceb58452",
+      "position": [
+        1760,
+        0
+      ],
+      "name": "Query",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "postgres": {
+          "id": "UmpkC3NkKcg32kNA",
+          "name": "ZMS Supabase Postgres"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with live as (\n  select c.id as client_id,\n         coalesce(sum(a.spend), 0) as spend, coalesce(sum(a.leads), 0) as leads,\n         coalesce((select sum(appointments_booked) from ghl_metrics_daily g\n                   where g.client_id = c.id and g.date >= current_date - 30), 0) as appointments\n  from clients c\n  left join ad_metrics_daily a on a.client_id = c.id and a.date >= current_date - 30\n  group by c.id\n),\nsc as (\n  select s.*,\n         case when s.run_at is not null and s.run_at > now() - interval '8 days' then 'triage' else 'live_30d' end as metrics_source,\n         coalesce(s.window_start, (current_date - 30)::text::date) as window_start_eff,\n         coalesce(s.window_end, current_date) as window_end_eff,\n         case when s.run_at is not null and s.run_at > now() - interval '8 days' then s.spend else l.spend end as spend_eff,\n         case when s.run_at is not null and s.run_at > now() - interval '8 days' then s.leads else l.leads end as leads_eff,\n         case when s.run_at is not null and s.run_at > now() - interval '8 days' then s.appointments_ghl else l.appointments end as appts_eff,\n         (select count(*) from recommendations r where r.client_id = s.client_id and r.status = 'proposed') as open_recs\n  from v_client_scorecard s\n  join live l on l.client_id = s.client_id\n)\nselect json_build_object('rows', coalesce((select json_agg(sc) from sc), '[]'::json), 'econ', coalesce((select json_agg(e) from (select id, avg_job_value, close_rate, gross_margin_pct, max_ad_cost_share from clients) e), '[]'::json)) as data",
+        "options": {}
+      }
+    },
+    {
+      "id": "f11af1af-2dba-496c-a3ff-80551d08c399",
+      "position": [
+        1980,
+        200
+      ],
+      "name": "DB error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const out = (() => {\n// Public dashboard URL (links in cards / Slack). Backend default: settings.dashboard_url.\nconst DASHBOARD_URL = 'https://zms-ad-reporting.netlify.app';\n// Dates are computed in the backend's timezone (TZ=America/Los_Angeles); ISO yyyy-mm-dd strings.\nconst todayLA = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());\nconst addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };\nconst yesterdayLA = () => addDays(todayLA(), -1);\n\n// Python's round(x, n) for display values (half-to-even on exact ties is not reproduced).\nconst pyRound = (x, n = 0) => (x === null || x === undefined ? x : Number(Number(x).toFixed(n)));\nconst num = (x) => (x === null || x === undefined ? 0 : Number(x));\nconst safeDiv = (a, b) => (b ? pyRound(a / b, 2) : null);\n\n// economics.py\nconst maxCpba = (job, close, margin, share) => {\n  const j = Number(job || 0);\n  if (!(j > 0)) return null;\n  return pyRound(j * Number(close || 0) * Number(margin || 0) * Number(share || 0), 2);\n};\nconst cpbaColor = (cpba, ceiling) => {\n  if (cpba === null || cpba === undefined || !ceiling) return null;\n  return cpba <= ceiling * 0.75 ? 'green' : cpba <= ceiling ? 'yellow' : 'red';\n};\n\n// targets.py — targets: array of service_targets rows\nconst indexTargets = (rows) => {\n  const m = new Map();\n  for (const r of rows || []) m.set(r.service + '|' + r.platform, r);\n  return m;\n};\nconst resolveTarget = (tg, service, platform) => {\n  if (!service) return null;\n  return tg.get(service + '|' + (platform || 'all')) || tg.get(service + '|all') || null;\n};\n// overview.py _expected: lead-weighted (else spend-weighted) CPL green/red for service rows\nconst expectedCpl = (rows, tg, clientGreen, clientRed) => {\n  let wg = 0, wr = 0, ws = 0;\n  for (const r of rows) {\n    const t = resolveTarget(tg, r.service, r.platform);\n    const g = t && t.cpl_green !== null && t.cpl_green !== undefined ? Number(t.cpl_green) : clientGreen;\n    const rd = t && t.cpl_red !== null && t.cpl_red !== undefined ? Number(t.cpl_red) : t ? g * 1.5 : clientRed;\n    const w = num(r.leads) || num(r.spend) * 0.01;\n    if (w <= 0) continue;\n    wg += g * w; wr += rd * w; ws += w;\n  }\n  return ws === 0 ? null : [pyRound(wg / ws, 2), pyRound(wr / ws, 2)];\n};\n\n// Rejections from a Validate step. fail() for plain errors, invalid() for FastAPI-style 422s.\nconst fail = (status, detail) => ({ __fail: { status, detail } });\nconst isDate = (s) => typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));\nconst invalid = (loc, msg, type = 'value_error') => fail(422, [{ type, loc, msg }]);\n// Required start/end query dates → fail() or null.\nconst requireRange = (q) => {\n  for (const k of ['start', 'end']) {\n    if (!q[k]) return invalid(['query', k], 'Field required', 'missing');\n    if (!isDate(q[k])) return invalid(['query', k], 'Input should be a valid date', 'date_from_datetime_parsing');\n  }\n  return null;\n};\n\n// Minimal pydantic: spec = { field: { type: 'str'|'num'|'bool', required?, nullable?, min?, max?,\n// pattern?, default?, ge?, le?, int? } }. Unknown keys are rejected (extra=\"forbid\") unless allowExtra; strings are capped at 500 chars\n// (str_max_length). partial=true validates only the keys present (exclude_unset). Returns\n// { value } or a fail().\nconst checkBody = (spec, body, partial = false, allowExtra = false) => {\n  if (body === null || typeof body !== 'object' || Array.isArray(body)) {\n    return invalid(['body'], 'Input should be a valid dictionary', 'dict_type');\n  }\n  const errors = [];\n  const out = {};\n  for (const k of Object.keys(body)) {\n    if (!allowExtra && !(k in spec)) errors.push({ type: 'extra_forbidden', loc: ['body', k], msg: 'Extra inputs are not permitted' });\n  }\n  for (const [k, f] of Object.entries(spec)) {\n    const present = Object.prototype.hasOwnProperty.call(body, k);\n    if (!present) {\n      if (f.required && !partial) errors.push({ type: 'missing', loc: ['body', k], msg: 'Field required' });\n      else if (!partial) out[k] = f.default ?? null;\n      continue;\n    }\n    let v = body[k];\n    if (v === null) {\n      if (f.nullable === false) errors.push({ type: f.type + '_type', loc: ['body', k], msg: 'Input should not be None' });\n      out[k] = null;\n      continue;\n    }\n    if (f.type === 'str') {\n      if (typeof v !== 'string') { errors.push({ type: 'string_type', loc: ['body', k], msg: 'Input should be a valid string' }); continue; }\n      const max = Math.min(f.max ?? 500, 500);\n      if (f.min && v.length < f.min) errors.push({ type: 'string_too_short', loc: ['body', k], msg: 'String should have at least ' + f.min + ' character' + (f.min === 1 ? '' : 's') });\n      if (v.length > max) errors.push({ type: 'string_too_long', loc: ['body', k], msg: 'String should have at most ' + max + ' characters' });\n      if (f.pattern && !new RegExp(f.pattern).test(v)) errors.push({ type: 'string_pattern_mismatch', loc: ['body', k], msg: \"String should match pattern '\" + f.pattern + \"'\" });\n    } else if (f.type === 'num') {\n      if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) v = Number(v);\n      if (typeof v !== 'number' || !Number.isFinite(v)) { errors.push({ type: 'float_parsing', loc: ['body', k], msg: 'Input should be a valid number' }); continue; }\n      if (f.ge !== undefined && v < f.ge) errors.push({ type: 'greater_than_equal', loc: ['body', k], msg: 'Input should be greater than or equal to ' + f.ge });\n      if (f.le !== undefined && v > f.le) errors.push({ type: 'less_than_equal', loc: ['body', k], msg: 'Input should be less than or equal to ' + f.le });\n      if (f.int && !Number.isInteger(v)) errors.push({ type: 'int_from_float', loc: ['body', k], msg: 'Input should be a valid integer, got a number with a fractional part' });\n    } else if (f.type === 'bool') {\n      if (typeof v !== 'boolean') { errors.push({ type: 'bool_parsing', loc: ['body', k], msg: 'Input should be a valid boolean' }); continue; }\n    }\n    out[k] = v;\n  }\n  return errors.length ? fail(422, errors) : { value: out };\n};\n\n// audit_log context from the webhook request (core/audit.py client_ip + user agent)\nconst auditCtx = (req, user) => {\n  const h = req.headers || {};\n  let ip = h['cf-connecting-ip'] || h['x-real-ip'] || (h['x-forwarded-for'] || '').split(',')[0].trim() || null;\n  if (ip && !/^[0-9a-fA-F:.]{2,45}$/.test(ip)) ip = null; // only values the ::inet cast accepts\n  const ua = h['user-agent'] ? String(h['user-agent']).slice(0, 500) : null;\n  return { actor_id: user ? user.id : null, actor_email: user ? user.email : null, ip, user_agent: ua };\n};\nconst scorecard = (row, econ) => {\n  const d = { ...row };\n  const spend = num(d.spend_eff), leads = num(d.leads_eff), appts = num(d.appts_eff);\n  delete d.spend_eff; delete d.leads_eff; delete d.appts_eff;\n  d.window_start = d.window_start_eff; d.window_end = d.window_end_eff;\n  delete d.window_start_eff; delete d.window_end_eff;\n  d.spend = pyRound(spend, 2); d.leads = leads; d.appointments_ghl = Math.trunc(appts);\n  d.cpl = leads ? pyRound(spend / leads, 2) : null;\n  d.cpba = appts && ['ghl', 'sheet'].includes(d.booking_system) ? pyRound(spend / appts, 2) : null;\n  d.lead_to_appt_rate = leads ? pyRound(appts / leads, 4) : null;\n  for (const m of ['cpl', 'cpba']) {\n    const med = d[m + '_median'];\n    d[m + '_vs_median'] = d[m] !== null && med ? pyRound(d[m] / Number(med), 3) : null;\n  }\n  const e = econ[d.client_id];\n  d.cpba_max = e ? maxCpba(e.avg_job_value, e.close_rate, e.gross_margin_pct, e.max_ad_cost_share) : null;\n  d.cpba_color = cpbaColor(d.cpba, d.cpba_max);\n  return d;\n};\nconst econIndex = (rows) => { const o = {}; for (const r of rows) o[r.id] = r; return o; };\nconst req = $('Webhook').first().json;\nconst user = $('Build user').first().json.user;\nconst err = $json.error;\nreturn { status: 500, body: { detail: 'Internal Server Error' } };\n})();\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "066cd4ce-275c-4075-ad7b-535db58ea99e",
+      "position": [
+        2200,
+        0
+      ],
+      "name": "Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const out = (() => {\n// Public dashboard URL (links in cards / Slack). Backend default: settings.dashboard_url.\nconst DASHBOARD_URL = 'https://zms-ad-reporting.netlify.app';\n// Dates are computed in the backend's timezone (TZ=America/Los_Angeles); ISO yyyy-mm-dd strings.\nconst todayLA = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());\nconst addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };\nconst yesterdayLA = () => addDays(todayLA(), -1);\n\n// Python's round(x, n) for display values (half-to-even on exact ties is not reproduced).\nconst pyRound = (x, n = 0) => (x === null || x === undefined ? x : Number(Number(x).toFixed(n)));\nconst num = (x) => (x === null || x === undefined ? 0 : Number(x));\nconst safeDiv = (a, b) => (b ? pyRound(a / b, 2) : null);\n\n// economics.py\nconst maxCpba = (job, close, margin, share) => {\n  const j = Number(job || 0);\n  if (!(j > 0)) return null;\n  return pyRound(j * Number(close || 0) * Number(margin || 0) * Number(share || 0), 2);\n};\nconst cpbaColor = (cpba, ceiling) => {\n  if (cpba === null || cpba === undefined || !ceiling) return null;\n  return cpba <= ceiling * 0.75 ? 'green' : cpba <= ceiling ? 'yellow' : 'red';\n};\n\n// targets.py — targets: array of service_targets rows\nconst indexTargets = (rows) => {\n  const m = new Map();\n  for (const r of rows || []) m.set(r.service + '|' + r.platform, r);\n  return m;\n};\nconst resolveTarget = (tg, service, platform) => {\n  if (!service) return null;\n  return tg.get(service + '|' + (platform || 'all')) || tg.get(service + '|all') || null;\n};\n// overview.py _expected: lead-weighted (else spend-weighted) CPL green/red for service rows\nconst expectedCpl = (rows, tg, clientGreen, clientRed) => {\n  let wg = 0, wr = 0, ws = 0;\n  for (const r of rows) {\n    const t = resolveTarget(tg, r.service, r.platform);\n    const g = t && t.cpl_green !== null && t.cpl_green !== undefined ? Number(t.cpl_green) : clientGreen;\n    const rd = t && t.cpl_red !== null && t.cpl_red !== undefined ? Number(t.cpl_red) : t ? g * 1.5 : clientRed;\n    const w = num(r.leads) || num(r.spend) * 0.01;\n    if (w <= 0) continue;\n    wg += g * w; wr += rd * w; ws += w;\n  }\n  return ws === 0 ? null : [pyRound(wg / ws, 2), pyRound(wr / ws, 2)];\n};\n\n// Rejections from a Validate step. fail() for plain errors, invalid() for FastAPI-style 422s.\nconst fail = (status, detail) => ({ __fail: { status, detail } });\nconst isDate = (s) => typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));\nconst invalid = (loc, msg, type = 'value_error') => fail(422, [{ type, loc, msg }]);\n// Required start/end query dates → fail() or null.\nconst requireRange = (q) => {\n  for (const k of ['start', 'end']) {\n    if (!q[k]) return invalid(['query', k], 'Field required', 'missing');\n    if (!isDate(q[k])) return invalid(['query', k], 'Input should be a valid date', 'date_from_datetime_parsing');\n  }\n  return null;\n};\n\n// Minimal pydantic: spec = { field: { type: 'str'|'num'|'bool', required?, nullable?, min?, max?,\n// pattern?, default?, ge?, le?, int? } }. Unknown keys are rejected (extra=\"forbid\") unless allowExtra; strings are capped at 500 chars\n// (str_max_length). partial=true validates only the keys present (exclude_unset). Returns\n// { value } or a fail().\nconst checkBody = (spec, body, partial = false, allowExtra = false) => {\n  if (body === null || typeof body !== 'object' || Array.isArray(body)) {\n    return invalid(['body'], 'Input should be a valid dictionary', 'dict_type');\n  }\n  const errors = [];\n  const out = {};\n  for (const k of Object.keys(body)) {\n    if (!allowExtra && !(k in spec)) errors.push({ type: 'extra_forbidden', loc: ['body', k], msg: 'Extra inputs are not permitted' });\n  }\n  for (const [k, f] of Object.entries(spec)) {\n    const present = Object.prototype.hasOwnProperty.call(body, k);\n    if (!present) {\n      if (f.required && !partial) errors.push({ type: 'missing', loc: ['body', k], msg: 'Field required' });\n      else if (!partial) out[k] = f.default ?? null;\n      continue;\n    }\n    let v = body[k];\n    if (v === null) {\n      if (f.nullable === false) errors.push({ type: f.type + '_type', loc: ['body', k], msg: 'Input should not be None' });\n      out[k] = null;\n      continue;\n    }\n    if (f.type === 'str') {\n      if (typeof v !== 'string') { errors.push({ type: 'string_type', loc: ['body', k], msg: 'Input should be a valid string' }); continue; }\n      const max = Math.min(f.max ?? 500, 500);\n      if (f.min && v.length < f.min) errors.push({ type: 'string_too_short', loc: ['body', k], msg: 'String should have at least ' + f.min + ' character' + (f.min === 1 ? '' : 's') });\n      if (v.length > max) errors.push({ type: 'string_too_long', loc: ['body', k], msg: 'String should have at most ' + max + ' characters' });\n      if (f.pattern && !new RegExp(f.pattern).test(v)) errors.push({ type: 'string_pattern_mismatch', loc: ['body', k], msg: \"String should match pattern '\" + f.pattern + \"'\" });\n    } else if (f.type === 'num') {\n      if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) v = Number(v);\n      if (typeof v !== 'number' || !Number.isFinite(v)) { errors.push({ type: 'float_parsing', loc: ['body', k], msg: 'Input should be a valid number' }); continue; }\n      if (f.ge !== undefined && v < f.ge) errors.push({ type: 'greater_than_equal', loc: ['body', k], msg: 'Input should be greater than or equal to ' + f.ge });\n      if (f.le !== undefined && v > f.le) errors.push({ type: 'less_than_equal', loc: ['body', k], msg: 'Input should be less than or equal to ' + f.le });\n      if (f.int && !Number.isInteger(v)) errors.push({ type: 'int_from_float', loc: ['body', k], msg: 'Input should be a valid integer, got a number with a fractional part' });\n    } else if (f.type === 'bool') {\n      if (typeof v !== 'boolean') { errors.push({ type: 'bool_parsing', loc: ['body', k], msg: 'Input should be a valid boolean' }); continue; }\n    }\n    out[k] = v;\n  }\n  return errors.length ? fail(422, errors) : { value: out };\n};\n\n// audit_log context from the webhook request (core/audit.py client_ip + user agent)\nconst auditCtx = (req, user) => {\n  const h = req.headers || {};\n  let ip = h['cf-connecting-ip'] || h['x-real-ip'] || (h['x-forwarded-for'] || '').split(',')[0].trim() || null;\n  if (ip && !/^[0-9a-fA-F:.]{2,45}$/.test(ip)) ip = null; // only values the ::inet cast accepts\n  const ua = h['user-agent'] ? String(h['user-agent']).slice(0, 500) : null;\n  return { actor_id: user ? user.id : null, actor_email: user ? user.email : null, ip, user_agent: ua };\n};\nconst scorecard = (row, econ) => {\n  const d = { ...row };\n  const spend = num(d.spend_eff), leads = num(d.leads_eff), appts = num(d.appts_eff);\n  delete d.spend_eff; delete d.leads_eff; delete d.appts_eff;\n  d.window_start = d.window_start_eff; d.window_end = d.window_end_eff;\n  delete d.window_start_eff; delete d.window_end_eff;\n  d.spend = pyRound(spend, 2); d.leads = leads; d.appointments_ghl = Math.trunc(appts);\n  d.cpl = leads ? pyRound(spend / leads, 2) : null;\n  d.cpba = appts && ['ghl', 'sheet'].includes(d.booking_system) ? pyRound(spend / appts, 2) : null;\n  d.lead_to_appt_rate = leads ? pyRound(appts / leads, 4) : null;\n  for (const m of ['cpl', 'cpba']) {\n    const med = d[m + '_median'];\n    d[m + '_vs_median'] = d[m] !== null && med ? pyRound(d[m] / Number(med), 3) : null;\n  }\n  const e = econ[d.client_id];\n  d.cpba_max = e ? maxCpba(e.avg_job_value, e.close_rate, e.gross_margin_pct, e.max_ad_cost_share) : null;\n  d.cpba_color = cpbaColor(d.cpba, d.cpba_max);\n  return d;\n};\nconst econIndex = (rows) => { const o = {}; for (const r of rows) o[r.id] = r; return o; };\nconst req = $('Webhook').first().json;\nconst user = $('Build user').first().json.user;\nconst data = $json.data;\n\nconst econ = econIndex(data.econ);\nconst rows = data.rows.map((r) => scorecard(r, econ));\nconst k = (v) => -(v !== null && v !== undefined ? v : -1);\nrows.sort((a, b) => k(a.cpba_vs_median) - k(b.cpba_vs_median) || k(a.cpl_vs_median) - k(b.cpl_vs_median) || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));\nreturn { body: rows };\n})();\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "c5d61719-1ccc-42db-a140-3047e600e843",
+      "position": [
+        2420,
+        0
+      ],
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.body === undefined ? '' : JSON.stringify($json.body) }}",
+        "options": {
+          "responseCode": "={{ $json.status ?? 200 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read token": {
+      "main": [
+        [
+          {
+            "node": "Has token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has token?": {
+      "main": [
+        [
+          {
+            "node": "Verify JWT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify JWT": {
+      "main": [
+        [
+          {
+            "node": "Load profile",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Token error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load profile": {
+      "main": [
+        [
+          {
+            "node": "Build user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build user": {
+      "main": [
+        [
+          {
+            "node": "Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token error": {
+      "main": [
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorized?": {
+      "main": [
+        [
+          {
+            "node": "Query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query": {
+      "main": [
+        [
+          {
+            "node": "Shape",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB error": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  }
+}

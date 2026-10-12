@@ -4,6 +4,8 @@
 // Every query runs inside `with cl as (client by slug)`; data is null when the slug is
 // unknown (→ 404). Params: $1 slug, $2 start, $3 end, then endpoint-specific ones.
 
+import { campaignAppts } from "../libs/sql.mjs";
+
 const CLIENT = `cl as (select id, name, slug, cpl_target_green, cpl_target_red from clients where slug = $1)`;
 const CID = "(select id from cl)";
 
@@ -62,40 +64,7 @@ export default [
       where client_id = ${CID} and date between $2::date and $3::date and ($4::text is null or platform = $4)
       group by platform, campaign_id
     ) x), '[]'::json),
-  'appts', coalesce((
-    select json_agg(z) from (
-      with camp as (
-        select platform, campaign_id, sum(leads) leads from ad_metrics_daily
-        where client_id = ${CID} and date between $2::date and $3::date group by 1, 2
-      ),
-      adsets as (
-        select campaign_id, adset_name, sum(leads) leads, sum(spend) spend from adset_metrics_daily
-        where client_id = ${CID} and platform = 'meta' and date between $2::date and $3::date group by 1, 2
-      ),
-      same_name as (select adset_name, sum(leads) leads, sum(spend) spend from adsets group by 1),
-      booked as (
-        select adset_name, sum(appointments) appointments from ghl_adset_daily
-        where client_id = ${CID} and date between $2::date and $3::date group by 1
-      ),
-      tagged as (
-        select a.campaign_id,
-               sum(b.appointments * case when s.leads > 0 then a.leads / s.leads
-                                         when s.spend > 0 then a.spend / s.spend else 0 end) appointments
-        from booked b join same_name s on s.adset_name = b.adset_name
-        join adsets a on a.adset_name = b.adset_name
-        group by 1
-      ),
-      totals as (
-        select (select coalesce(sum(appointments_booked), 0) from ghl_metrics_daily where client_id = ${CID} and date between $2::date and $3::date) total,
-               (select coalesce(sum(appointments), 0) from tagged) tagged_total,
-               (select coalesce(sum(leads), 0) from camp) leads
-      )
-      select c.platform, c.campaign_id,
-             coalesce(t.appointments, 0)
-               + greatest(totals.total - totals.tagged_total, 0)
-                 * case when totals.leads > 0 then c.leads / totals.leads else 0 end as appointments
-      from camp c cross join totals
-      left join tagged t on t.campaign_id = c.campaign_id
+  'appts', coalesce((select json_agg(z) from (${campaignAppts(CID, "$2::date", "$3::date")}
     ) z), '[]'::json),
   'services', coalesce((
     select json_agg(z) from (
