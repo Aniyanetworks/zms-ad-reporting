@@ -1,0 +1,157 @@
+{
+  "name": "ZMS API · GET /api/health",
+  "nodes": [
+    {
+      "id": "78eb26fc-3e6b-4b5c-a729-c6a8b33643f9",
+      "position": [
+        0,
+        0
+      ],
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "1eaee6c4-6041-42f4-a5a0-55b6097f5a83",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "api/health",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "61a68aba-2e5e-4962-a152-b649ab4a4733",
+      "position": [
+        220,
+        0
+      ],
+      "name": "Query",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "postgres": {
+          "id": "UmpkC3NkKcg32kNA",
+          "name": "ZMS Supabase Postgres"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select coalesce(json_object_agg(source, last_success), '{}'::json) as data\nfrom (\n  select source, max(finished_at) as last_success\n  from sync_runs where status = 'success' and source in ('meta', 'google', 'ghl')\n  group by source\n) t",
+        "options": {}
+      }
+    },
+    {
+      "id": "a6eb7497-4af3-43ee-a7d4-b9a0c2302cde",
+      "position": [
+        440,
+        200
+      ],
+      "name": "DB error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const out = (() => {\nconst req = $('Webhook').first().json;\nconst user = null;\nconst err = $json.error;\n\nreturn { status: 503, body: {\n  status: 'unhealthy', service: 'api', environment: 'production', version: 'n8n',\n  checked_at: new Date().toISOString().slice(0, 19) + '+00:00',\n  checks: { db: { ok: false, error: 'DatabaseError' } },\n} };\n})();\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "8bbc9a2d-32c4-4ac3-a379-c73c8ff4135d",
+      "position": [
+        660,
+        0
+      ],
+      "name": "Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const out = (() => {\nconst req = $('Webhook').first().json;\nconst user = null;\nconst data = $json.data;\n\nconst STALE_MS = 26 * 3600 * 1000;\nconst now = Date.now();\nconst syncs = {};\nfor (const s of ['meta', 'google', 'ghl']) {\n  const ts = data[s] ?? null;\n  syncs[s] = { ok: ts !== null && now - Date.parse(ts) <= STALE_MS, last_success: ts };\n}\nconst ok = Object.values(syncs).every((v) => v.ok);\nreturn { body: {\n  status: ok ? 'ok' : 'degraded', service: 'api', environment: 'production', version: 'n8n',\n  checked_at: new Date().toISOString().slice(0, 19) + '+00:00',\n  checks: { db: { ok: true }, syncs },\n} };\n})();\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "2d1e7f48-8153-42a0-af75-2903584f690d",
+      "position": [
+        880,
+        0
+      ],
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "responseCode": "={{ $json.status ?? 200 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Query",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query": {
+      "main": [
+        [
+          {
+            "node": "Shape",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB error": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  }
+}

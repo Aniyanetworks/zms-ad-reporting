@@ -1,0 +1,93 @@
+{
+  "name": "ZMS API · GET /api/health/live",
+  "nodes": [
+    {
+      "id": "7083d1a4-a3cb-4f5b-a11b-2ab913f4fb22",
+      "position": [
+        0,
+        0
+      ],
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "4fce8db8-eb5a-4976-a471-135050756b00",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "api/health/live",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "bb3bbd13-475c-42cb-a651-26425bbe4f57",
+      "position": [
+        220,
+        0
+      ],
+      "name": "Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const out = (() => {\nconst req = $('Webhook').first().json;\nconst user = null;\nconst data = null;\nreturn { body: { status: 'ok' } };\n})();\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "1ea0957f-6a0e-47a9-ac25-0e32531e2f0e",
+      "position": [
+        440,
+        0
+      ],
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "responseCode": "={{ $json.status ?? 200 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Shape",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  }
+}
