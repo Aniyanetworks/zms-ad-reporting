@@ -1,0 +1,511 @@
+{
+  "name": "ZMS API · GET /api/clients/{slug}/plays",
+  "nodes": [
+    {
+      "id": "5a6c4348-090f-4bc5-af91-58734138de48",
+      "position": [
+        0,
+        0
+      ],
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "zms",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "api/clients/:slug/plays",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "d6f03da4-6bc5-4294-a7ab-df67e35a8a68",
+      "position": [
+        220,
+        0
+      ],
+      "name": "Read token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const m = /^Bearer\\s+(.+)$/i.exec(($json.headers || {}).authorization || '');\nreturn [{ json: m ? { token: m[1].trim() } : { error: { status: 401, detail: 'Missing token' } } }];"
+      }
+    },
+    {
+      "id": "21245e2d-c03d-48a7-a298-592974ca8886",
+      "position": [
+        440,
+        0
+      ],
+      "name": "Has token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1fdb5ee6-9b3c-4627-a438-e557c9358805",
+              "leftValue": "={{ !$json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "d49f51bb-4c92-4bfc-a443-1c80a4c97908",
+      "position": [
+        660,
+        0
+      ],
+      "name": "Verify JWT",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "jwtAuth": {
+          "id": "VO3CX2JfTZ8fKIez",
+          "name": "ZMS Supabase JWT (public key)"
+        }
+      },
+      "parameters": {
+        "operation": "verify",
+        "token": "={{ $json.token }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "ffa70d68-ba4c-4116-ab93-9c5e06e29eb3",
+      "position": [
+        880,
+        200
+      ],
+      "name": "Token error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const e = $json.error;\nconst msg = (e && (e.message || e.description)) || (typeof e === 'string' ? e : 'invalid token');\nreturn [{ json: { error: { status: 401, detail: `Invalid token: ${msg}` } } }];"
+      }
+    },
+    {
+      "id": "ae55ab25-aabb-46e5-af79-4f6fd60b6980",
+      "position": [
+        1100,
+        0
+      ],
+      "name": "Load profile",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "credentials": {
+        "postgres": {
+          "id": "UmpkC3NkKcg32kNA",
+          "name": "ZMS Supabase Postgres"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select coalesce((select to_jsonb(p) from (select role, full_name from profiles where id = $1::uuid) p), '{}'::jsonb) as profile",
+        "options": {
+          "queryReplacement": "={{ [($json.payload ?? $json).sub] }}"
+        }
+      }
+    },
+    {
+      "id": "07e8053a-0888-499c-a5a6-41607d0c4610",
+      "position": [
+        1320,
+        0
+      ],
+      "name": "Build user",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const v = $('Verify JWT').first().json;\nconst claims = v.payload ?? v;\nconst aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];\nif (!aud.includes('authenticated')) return [{ json: { error: { status: 401, detail: 'Invalid token: Invalid audience' } } }];\nconst p = $json.profile || {};\nconst role = [\"admin\",\"media_buyer\",\"viewer\"].includes(p.role) ? p.role : 'viewer';\nconst user = { id: claims.sub, email: claims.email ?? null, role, full_name: p.full_name ?? null };\nreturn [{ json: { user } }];"
+      }
+    },
+    {
+      "id": "2d076276-ae7f-424a-a310-70da047a994a",
+      "position": [
+        1540,
+        0
+      ],
+      "name": "Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1fdb5ee6-9b3c-4627-a438-e557c9358805",
+              "leftValue": "={{ !$json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "cfffb4bf-5e8e-4e92-a355-952cda050707",
+      "position": [
+        1760,
+        300
+      ],
+      "name": "Respond error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ { detail: $json.error.detail } === undefined ? '' : JSON.stringify({ detail: $json.error.detail }) }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "fbd42a6b-7ff0-42a6-a7ca-d7edaaae5ab1",
+      "position": [
+        1760,
+        0
+      ],
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const r = (() => {\n// Public dashboard URL (links in cards / Slack). Backend default: settings.dashboard_url.\nconst DASHBOARD_URL = 'https://zms-ad-reporting.netlify.app';\n// Dates are computed in the backend's timezone (TZ=America/Los_Angeles); ISO yyyy-mm-dd strings.\nconst todayLA = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());\nconst addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };\nconst yesterdayLA = () => addDays(todayLA(), -1);\n\n// Python's round(x, n) for display values (half-to-even on exact ties is not reproduced).\nconst pyRound = (x, n = 0) => (x === null || x === undefined ? x : Number(Number(x).toFixed(n)));\nconst num = (x) => (x === null || x === undefined ? 0 : Number(x));\nconst safeDiv = (a, b) => (b ? pyRound(a / b, 2) : null);\n\n// economics.py\nconst maxCpba = (job, close, margin, share) => {\n  const j = Number(job || 0);\n  if (!(j > 0)) return null;\n  return pyRound(j * Number(close || 0) * Number(margin || 0) * Number(share || 0), 2);\n};\nconst cpbaColor = (cpba, ceiling) => {\n  if (cpba === null || cpba === undefined || !ceiling) return null;\n  return cpba <= ceiling * 0.75 ? 'green' : cpba <= ceiling ? 'yellow' : 'red';\n};\n\n// targets.py — targets: array of service_targets rows\nconst indexTargets = (rows) => {\n  const m = new Map();\n  for (const r of rows || []) m.set(r.service + '|' + r.platform, r);\n  return m;\n};\nconst resolveTarget = (tg, service, platform) => {\n  if (!service) return null;\n  return tg.get(service + '|' + (platform || 'all')) || tg.get(service + '|all') || null;\n};\n// overview.py _expected: lead-weighted (else spend-weighted) CPL green/red for service rows\nconst expectedCpl = (rows, tg, clientGreen, clientRed) => {\n  let wg = 0, wr = 0, ws = 0;\n  for (const r of rows) {\n    const t = resolveTarget(tg, r.service, r.platform);\n    const g = t && t.cpl_green !== null && t.cpl_green !== undefined ? Number(t.cpl_green) : clientGreen;\n    const rd = t && t.cpl_red !== null && t.cpl_red !== undefined ? Number(t.cpl_red) : t ? g * 1.5 : clientRed;\n    const w = num(r.leads) || num(r.spend) * 0.01;\n    if (w <= 0) continue;\n    wg += g * w; wr += rd * w; ws += w;\n  }\n  return ws === 0 ? null : [pyRound(wg / ws, 2), pyRound(wr / ws, 2)];\n};\n\n// Rejections from a Validate step. fail() for plain errors, invalid() for FastAPI-style 422s.\nconst fail = (status, detail) => ({ __fail: { status, detail } });\nconst isDate = (s) => typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));\nconst invalid = (loc, msg, type = 'value_error') => fail(422, [{ type, loc, msg }]);\n\n// Minimal pydantic: spec = { field: { type: 'str'|'num'|'bool', required?, nullable?, min?, max?,\n// pattern?, default?, ge?, le?, int? } }. Unknown keys are rejected (extra=\"forbid\") unless allowExtra; strings are capped at 500 chars\n// (str_max_length). partial=true validates only the keys present (exclude_unset). Returns\n// { value } or a fail().\nconst checkBody = (spec, body, partial = false, allowExtra = false) => {\n  if (body === null || typeof body !== 'object' || Array.isArray(body)) {\n    return invalid(['body'], 'Input should be a valid dictionary', 'dict_type');\n  }\n  const errors = [];\n  const out = {};\n  for (const k of Object.keys(body)) {\n    if (!allowExtra && !(k in spec)) errors.push({ type: 'extra_forbidden', loc: ['body', k], msg: 'Extra inputs are not permitted' });\n  }\n  for (const [k, f] of Object.entries(spec)) {\n    const present = Object.prototype.hasOwnProperty.call(body, k);\n    if (!present) {\n      if (f.required && !partial) errors.push({ type: 'missing', loc: ['body', k], msg: 'Field required' });\n      else if (!partial) out[k] = f.default ?? null;\n      continue;\n    }\n    let v = body[k];\n    if (v === null) {\n      if (f.nullable === false) errors.push({ type: f.type + '_type', loc: ['body', k], msg: 'Input should not be None' });\n      out[k] = null;\n      continue;\n    }\n    if (f.type === 'str') {\n      if (typeof v !== 'string') { errors.push({ type: 'string_type', loc: ['body', k], msg: 'Input should be a valid string' }); continue; }\n      const max = Math.min(f.max ?? 500, 500);\n      if (f.min && v.length < f.min) errors.push({ type: 'string_too_short', loc: ['body', k], msg: 'String should have at least ' + f.min + ' character' + (f.min === 1 ? '' : 's') });\n      if (v.length > max) errors.push({ type: 'string_too_long', loc: ['body', k], msg: 'String should have at most ' + max + ' characters' });\n      if (f.pattern && !new RegExp(f.pattern).test(v)) errors.push({ type: 'string_pattern_mismatch', loc: ['body', k], msg: \"String should match pattern '\" + f.pattern + \"'\" });\n    } else if (f.type === 'num') {\n      if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) v = Number(v);\n      if (typeof v !== 'number' || !Number.isFinite(v)) { errors.push({ type: 'float_parsing', loc: ['body', k], msg: 'Input should be a valid number' }); continue; }\n      if (f.ge !== undefined && v < f.ge) errors.push({ type: 'greater_than_equal', loc: ['body', k], msg: 'Input should be greater than or equal to ' + f.ge });\n      if (f.le !== undefined && v > f.le) errors.push({ type: 'less_than_equal', loc: ['body', k], msg: 'Input should be less than or equal to ' + f.le });\n      if (f.int && !Number.isInteger(v)) errors.push({ type: 'int_from_float', loc: ['body', k], msg: 'Input should be a valid integer, got a number with a fractional part' });\n    } else if (f.type === 'bool') {\n      if (typeof v !== 'boolean') { errors.push({ type: 'bool_parsing', loc: ['body', k], msg: 'Input should be a valid boolean' }); continue; }\n    }\n    out[k] = v;\n  }\n  return errors.length ? fail(422, errors) : { value: out };\n};\n\n// audit_log context from the webhook request (core/audit.py client_ip + user agent)\nconst auditCtx = (req, user) => {\n  const h = req.headers || {};\n  let ip = h['cf-connecting-ip'] || h['x-real-ip'] || (h['x-forwarded-for'] || '').split(',')[0].trim() || null;\n  if (ip && !/^[0-9a-fA-F:.]{2,45}$/.test(ip)) ip = null; // only values the ::inet cast accepts\n  const ua = h['user-agent'] ? String(h['user-agent']).slice(0, 500) : null;\n  return { actor_id: user ? user.id : null, actor_email: user ? user.email : null, ip, user_agent: ua };\n};\nconst INTEGRATION_LABELS = {\n  meta_sync: 'Meta Ads', google_sync: 'Google Ads', lsa_sync: 'Local Services Ads', ghl_token: 'GHL connection',\n  ghl_stage_scheduled: 'Scheduled Appointment stage', ghl_stage_confirmed: 'Confirmed Appointment stage',\n  ghl_won: 'Won opportunities', ghl_paid_attribution: 'Paid attribution on leads',\n  ghl_appointments: 'Bookings from paid leads', utm_tags: 'Ad URL tagging', pixel_capi: 'Pixel / CAPI',\n  landing_pages: 'Landing pages',\n};\nconst PLAYS = {\n  kill: ['⛔', 'Kill'], kill_or_rebuild: ['⛔', 'Kill or rebuild'], fix_tracking: ['🛠', 'Fix tracking'],\n  fix_page: ['🐢', 'Fix landing page'], fix_form: ['📝', 'Fix form / offer'], new_hook: ['🎣', 'New hook'],\n  sharper_hook: ['🎣', 'Sharpen hook'], swap_open: ['🎣', 'Swap first 3 seconds'], fix_promise: ['🎬', 'Deliver the promise sooner'],\n  new_angle: ['💡', 'New angle'], fresh_test: ['🔁', 'Launch fresh test'], add_diversity: ['🎨', 'Add a new concept'],\n  trim_ads: ['✂️', 'Too many ads'], add_ads: ['➕', 'Add ads'], consolidate: ['🧱', 'Consolidate budget'],\n  fix_followup: ['📞', 'Fix lead follow-up'], quality: ['⚠️', 'Fix confirmations'], diagnose: ['🔎', 'Diagnose'],\n  scale: ['🚀', 'Scale'], micro_scale: ['📈', 'Micro-scale'], no_leads: ['📉', 'No leads'],\n  no_bookings: ['📅', 'No bookings'], over_target: ['💸', 'Over target'], cpl_up: ['🔺', 'CPL rising'],\n  spend_stopped: ['⏸', 'Spend stopped'], search_terms: ['🔍', 'Search-term waste'], junk_traffic: ['🗑', 'Junk traffic'],\n  integration: ['🔌', 'Integration'], note: ['ℹ️', 'Note'],\n};\nconst LEGEND = '⛔ kill · 🛠 fix tracking · 🐢 fix page · 📝 fix form · 🎣 new hook · 🎬 promise sooner · 💡 new angle · 🔁 fresh test · 🎨 new concept · ✂️ too many ads · 🧱 consolidate · 📞 follow-up · 🚀 scale';\nconst VERDICT_PLAY = { fix: ['fix_tracking', 'red'], kill: ['kill', 'red'], kill_or_rebuild: ['kill_or_rebuild', 'red'],\n  quality_fail: ['quality', 'yellow'], diagnose: ['diagnose', 'yellow'], scale: ['scale', 'green'], micro_scale: ['micro_scale', 'green'] };\nconst KIND_PLAY = [['landing_page_broken', 'fix_page'], ['missing_utm', 'fix_tracking'], ['signal_gap', 'fix_tracking'],\n  ['google_junk_traffic', 'junk_traffic'], ['google_unmanaged_terms', 'search_terms'],\n  ['cpba_unprofitable', 'over_target'], ['no_appointments', 'no_bookings'], ['spend_stopped', 'spend_stopped']];\nconst RANK = { red: 0, yellow: 1, green: 2, grey: 3, info: 4 };\nconst DOT = { red: '🔴', yellow: '🟡', green: '🟢', grey: '⚪' };\nconst STATUS_LABEL = { red: 'Needs action', yellow: 'Watch', green: 'On target', grey: 'Not graded' };\nconst NO_LEADS_MIN_SPEND = 50.0, CPL_UP = 0.30, CPL_MIN_LEADS = 3, SLACK_ISSUES_PER_CLIENT = 5;\n\n// Python formatting\nconst rhe = (x) => { const f = Math.floor(x); const d = x - f; return d > 0.5 ? f + 1 : d < 0.5 ? f : (f % 2 === 0 ? f : f + 1); };\nconst grp = (v, d) => Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });\nconst _f = (v) => (v === null || v === undefined ? 0 : Number(v));\nconst _money = (v) => {\n  if (v === null || v === undefined) return '—';\n  if (v >= 10000) return '$' + grp(v / 1000, 1) + 'k';\n  return v >= 100 ? '$' + grp(v, 0) : '$' + grp(v, 2);\n};\nconst _n = (v) => { v = _f(v); return Math.abs(v - rhe(v)) < 0.05 ? v.toFixed(0) : v.toFixed(1); };\nconst _pct0 = (x) => rhe(x * 100) + '%';\nconst _delta = (now, before) => { if (before <= 0) return null; const p = rhe((now - before) / before * 100); return Math.abs(p) >= 10 ? p : null; };\nconst _mdy = (iso) => { const [y, m, d] = iso.split('-').map(Number); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1] + ' ' + d; };\nconst _lstrip = (s) => s.replace(/^[ :—-]+/, '');\n\nconst _human = (s) => {\n  s = s || '';\n  s = s.replace(/Gate [ABC]:\\s*/g, '');\n  s = s.split('CPAₛ').join('cost per booked').split('Tₛ').join('target').split('T꜀').join('confirmed target');\n  s = s.split('scheduled').join('booked').split('two-window: ').join('');\n  s = s.replace(/(\\d+(?:\\.\\d+)?)×\\s?target/g, '$1× target');\n  s = s.includes('0 booked after')\n    ? s.split('0 booked after').join('0 booked after spending').split('× target').join('× the target')\n    : s.split('×target').join('× target');\n  s = s.split('≤').join('at or under ').split('in 7d and 14d').join('in both 7 and 14 days');\n  s = s.replace(/\\s{2,}/g, ' ').split('near target: ').join('');\n  return s.trim();\n};\nconst _firstSentence = (s, n = 110) => {\n  s = (s || '').split(';')[0].split('. ')[0].trim().replace(/\\.+$/, '');\n  return s.length <= n ? s : s.slice(0, n - 1).replace(/\\s+$/, '') + '…';\n};\nconst _issue = (play, sev, text, campaign = null, nextStep = null) => {\n  const [icon, label] = PLAYS[play] || PLAYS.note;\n  text = text.trim();\n  const words = label.split(' ');\n  for (const prefix of [label, words[0] + ' ' + (label.includes(' ') ? words[1] : '')]) {\n    const p = prefix.trim();\n    if (p && text.toLowerCase().startsWith(p.toLowerCase())) {\n      const rest = _lstrip(text.slice(p.length));\n      text = rest ? rest[0].toUpperCase() + rest.slice(1) : text;\n      break;\n    }\n  }\n  return { play, icon, label, sev, campaign, text: text.trim().replace(/\\.+$/, ''), next: nextStep ? _firstSentence(nextStep) : null };\n};\nconst _tracks = (c) => c.booking_system === 'sheet' || (c.booking_system === 'ghl' && !!c.ghl_location_id);\nconst _layerPlay = (layer) => {\n  const l = (layer || '').toLowerCase();\n  if (l.includes('hook')) return 'new_hook';\n  if (l.includes('ctr') || l.includes('angle')) return 'new_angle';\n  if (l.includes('landing page') || l.includes('page /')) return 'fix_page';\n  if (l.includes('form')) return 'fix_form';\n  if (l.includes('lead quality') || l.includes('speed')) return 'fix_followup';\n  return 'diagnose';\n};\nconst _campaignOf = (f, adCampaigns) => {\n  if (f.campaign) return f.campaign;\n  if (f.entity_type === 'campaign') return f.entity_name ?? null;\n  if (f.entity_type === 'ad') return adCampaigns[String(f.entity_id)] ?? null;\n  return null;\n};\nconst _stripCampaign = (msg, campaign) => {\n  if (!campaign) return msg;\n  msg = msg.split(' in ' + campaign).join('');\n  if (msg.startsWith(campaign)) msg = _lstrip(msg.slice(campaign.length).replace(/^\\s*\\([^)]*\\)/, ''));\n  return msg;\n};\n\nconst _alertIssues = (c, dry) => {\n  const out = [];\n  const spend3 = _f(c.spend_3), leads3 = _f(c.leads_3);\n  if (spend3 >= NO_LEADS_MIN_SPEND && leads3 === 0) {\n    const since = c.last_lead ? 'last lead ' + _mdy(c.last_lead) : 'none in 60 days';\n    out.push(_issue('no_leads', 'red', 'No leads in the last 3 days on ' + _money(spend3) + ' (' + since + ')', null,\n      'Check delivery, the form and the creative today'));\n  } else {\n    for (const d of dry.slice(0, 4)) {\n      out.push(_issue('no_leads', 'yellow', 'No leads in 3 days on ' + _money(_f(d.spend_3)) + ' (' + d.platform + ')', d.name));\n    }\n  }\n  const l7 = _f(c.leads_7), lp = _f(c.leads_prev7);\n  if (l7 >= CPL_MIN_LEADS && lp >= CPL_MIN_LEADS) {\n    const cpl7 = _f(c.spend_7) / l7, cplp = _f(c.spend_prev7) / lp;\n    if (cplp && (cpl7 - cplp) / cplp >= CPL_UP) {\n      out.push(_issue('cpl_up', 'yellow', 'CPL up ' + _pct0((cpl7 - cplp) / cplp) + ' week over week, ' + _money(cplp) + ' → ' + _money(cpl7), null,\n        'Diagnostic only — bookings decide; check the plays below'));\n    }\n  }\n  if (_tracks(c) && _f(c.booked_7) === 0 && _f(c.booked_prev7) >= 2) {\n    out.push(_issue('no_bookings', 'red', 'Bookings stopped: 0 this week vs ' + _n(c.booked_prev7) + ' last week', null,\n      'Check GHL stages and setter follow-up'));\n  }\n  return out;\n};\n\nconst _briefIssues = (brief, adCampaigns) => {\n  const out = [];\n  if (!brief) return out;\n  const findings = brief.findings || [];\n  for (const f of findings) {\n    if (f.kind === 'sop_verdict' && VERDICT_PLAY[f.verdict]) {\n      let [play, sev] = VERDICT_PLAY[f.verdict];\n      if (play === 'diagnose') play = _layerPlay(f.layer);\n      const d = f.decision || {};\n      let text = _human(f.gate);\n      if (f.proposed_value) text = f.proposed_value + ' — ' + text;\n      if (f.layer && sev !== 'green') text += '; ' + _human(f.layer.split(':')[0]);\n      out.push(_issue(play, sev, text, f.entity_name ?? null, d.next_step ?? null));\n    }\n  }\n  for (const f of findings) {\n    if (f.kind === 'creative_signal' && (f.severity === 'yellow' || f.severity === 'info')) {\n      const camp = f.entity_type !== 'campaign' ? _campaignOf(f, adCampaigns) : (f.entity_name ?? null);\n      out.push({ ..._issue(f.play, f.severity, f.text || f.message, camp, f.next_step ?? null),\n        where: f.entity_type === 'ad' || f.entity_type === 'adset' ? (f.entity_name ?? null) : null,\n        where_type: f.entity_type ?? null, advice: true });\n    }\n  }\n  for (const [kind, play] of KIND_PLAY) {\n    const seen = new Set();\n    for (const f of findings) {\n      if (f.kind !== kind || (f.severity !== 'red' && f.severity !== 'yellow')) continue;\n      const camp = _campaignOf(f, adCampaigns);\n      if (seen.has(camp) || seen.size >= 3) continue;\n      seen.add(camp);\n      out.push(_issue(play, f.severity, _stripCampaign(f.message, camp).slice(0, 220), camp));\n      if (camp === null) break;\n    }\n  }\n  return out;\n};\n\n// data = TODAY_SQL result; y = ISO date string\nconst buildCards = (data, y) => {\n  const base = DASHBOARD_URL.replace(/\\/+$/, '');\n  const briefs = {};\n  for (const b of data.briefs) briefs[b.slug] = b;\n  const dry = {};\n  for (const r of data.dry) (dry[r.client_id] ||= []).push(r);\n  const reds = {};\n  for (const r of data.health) (reds[r.slug] ||= new Set()).add(INTEGRATION_LABELS[r.check_key] || r.check_key.split('_').join(' '));\n\n  const cards = [];\n  for (const c of data.clients) {\n    const brief = briefs[c.slug] || null;\n    const tracks = _tracks(c);\n    const b7 = _f(c.booked_7), spend7 = _f(c.spend_7), leads7 = _f(c.leads_7);\n    const cpba7 = b7 ? spend7 / b7 : null;\n    const bt = ((brief || {}).platforms || {}).totals || {};\n    const ts = _f(c.target_cpba) || _f(bt.expected_cpba_green) || _f(bt.cpba_max) || null;\n\n    let status = 'grey';\n    const first = [];\n    if (tracks && ts) {\n      if (b7 >= 3 && cpba7 !== null) {\n        status = cpba7 <= ts ? 'green' : cpba7 <= ts * 1.3 ? 'yellow' : 'red';\n        if (status !== 'green') first.push(_issue('over_target', status, 'Cost per booked ' + _money(cpba7) + ' vs ' + _money(ts) + ' target (' + (cpba7 / ts).toFixed(1) + '×) on ' + _n(b7) + ' bookings'));\n      } else if (b7 > 0 && cpba7 !== null) {\n        status = cpba7 <= ts ? 'green' : 'yellow';\n        if (status === 'yellow') first.push(_issue('over_target', 'yellow', 'Cost per booked ' + _money(cpba7) + ' vs ' + _money(ts) + ' target, only ' + _n(b7) + ' booking' + (b7 !== 1 ? 's' : '') + ' — too thin to act on'));\n      } else if (spend7 >= Math.max(ts, 150)) {\n        status = 'red';\n        first.push(_issue('no_bookings', 'red', 'No bookings this week on ' + _money(spend7) + ' (' + (spend7 / ts).toFixed(1) + '× the ' + _money(ts) + ' target)', null,\n          'Audit lead quality and setter follow-up'));\n      }\n    } else if (tracks && b7 === 0 && spend7 >= 150) {\n      status = 'red';\n      first.push(_issue('no_bookings', 'red', 'No bookings this week on ' + _money(spend7)));\n    }\n\n    const issues = [...first, ..._alertIssues(c, dry[c.id] || []), ..._briefIssues(brief, data.ad_campaigns || {})];\n    if (reds[c.slug]) issues.push(_issue('integration', 'yellow', [...reds[c.slug]].sort().join(', ') + ' not working — see the Integrations page'));\n    if (!tracks) issues.push(_issue('note', 'info', 'Bookings not tracked — no GHL location or booking sheet linked'));\n    for (const i of issues) {\n      if ((i.sev === 'red' || i.sev === 'yellow') && i.play !== 'note' && i.play !== 'integration' && !i.advice && RANK[i.sev] < RANK[status]) status = i.sev;\n    }\n    issues.sort((a, b) => RANK[a.sev] - RANK[b.sev] || (a.campaign ? 1 : 0) - (b.campaign ? 1 : 0));\n\n    cards.push({\n      slug: c.slug, name: c.name, status, url: base + '/clients/' + c.slug,\n      tracks_bookings: tracks, target_cpba: ts,\n      leads: { y: _f(c.leads_1), d7: leads7, d30: _f(c.leads_30), delta7: _delta(leads7, _f(c.leads_prev7)) },\n      booked: tracks ? { y: _f(c.booked_1), d7: b7, d30: _f(c.booked_30), delta7: _delta(b7, _f(c.booked_prev7)) } : null,\n      spend: { y: _f(c.spend_1), d7: spend7, d30: _f(c.spend_30) },\n      cpl7: leads7 ? spend7 / leads7 : null, cpba7,\n      issues, spend30: _f(c.spend_30),\n    });\n  }\n  cards.sort((a, b) => RANK[a.status] - RANK[b.status] || b.spend30 - a.spend30);\n  const counts = {};\n  for (const k of ['red', 'yellow', 'green', 'grey']) counts[k] = cards.filter((x) => x.status === k).length;\n  const tot = (k, w) => cards.reduce((s, x) => s + (x[k] ? _f(x[k][w]) : 0), 0);\n  const totals = {};\n  for (const k of ['spend', 'leads', 'booked']) totals[k] = { y: tot(k, 'y'), d7: tot(k, 'd7'), d30: tot(k, 'd30') };\n  const top = [];\n  for (const x of cards) for (const i of x.issues) {\n    if ((i.sev === 'red' || i.sev === 'yellow') && !['note', 'integration', 'cpl_up'].includes(i.play)) top.push({ ...i, client: x.name, slug: x.slug, spend30: x.spend30 });\n  }\n  top.sort((a, b) => RANK[a.sev] - RANK[b.sev] || b.spend30 - a.spend30);\n  const wins = [];\n  for (const x of cards) for (const i of x.issues) if (i.play === 'scale' || i.play === 'micro_scale') wins.push({ ...i, client: x.name, slug: x.slug });\n  const bd = data.briefs.find((b) => b.brief_date);\n  return { date: y, brief_date: bd ? bd.brief_date : null, counts, totals,\n    top_actions: top.slice(0, 8), wins, clients: cards, legend: LEGEND, dashboard_url: base };\n};\n\n// ---- Slack rendering (render_slack)\nconst _playLine = (i, indent) => {\n  const sub = i.where && i.where_type === 'ad' ? i.where + ': ' : '';\n  let line = indent + i.icon + ' *' + i.label + '* — ' + sub + i.text;\n  if (i.next && i.play !== 'over_target') line += '\\n' + indent + '      _→ ' + i.next + '_';\n  return line;\n};\nconst _groupedLines = (issues) => {\n  const lines = issues.filter((i) => !i.campaign).map((i) => _playLine(i, ''));\n  const order = [];\n  const by = {};\n  for (const i of issues) if (i.campaign) { if (!by[i.campaign]) { order.push(i.campaign); by[i.campaign] = []; } by[i.campaign].push(i); }\n  for (const camp of order) { lines.push('*' + camp + '*'); for (const i of by[camp]) lines.push(_playLine(i, '    ')); }\n  return lines;\n};\nconst _arrow = (d) => (d === null || d === undefined ? '' : d > 0 ? ' ▲' + d + '%' : ' ▼' + Math.abs(d) + '%');\nconst _clientBlocks = (card, base) => {\n  const b = card.booked;\n  const fields = [\n    { type: 'mrkdwn', text: '*Leads*  _yday · 7d · 30d_\\n' + _n(card.leads.y) + ' · ' + _n(card.leads.d7) + _arrow(card.leads.delta7) + ' · ' + _n(card.leads.d30) },\n    { type: 'mrkdwn', text: b ? '*Booked*  _yday · 7d · 30d_\\n' + _n(b.y) + ' · ' + _n(b.d7) + _arrow(b.delta7) + ' · ' + _n(b.d30) : '*Booked*\\n_not tracked_' },\n    { type: 'mrkdwn', text: '*7-day spend · CPL*\\n' + _money(card.spend.d7) + ' · ' + _money(card.cpl7) },\n    { type: 'mrkdwn', text: '*Cost per booked*  _7d_\\n' + _money(card.cpba7) + (card.target_cpba && card.cpba7 ? '  vs ' + _money(card.target_cpba) + ' target' : '') },\n  ];\n  const visible = card.issues.filter((i) => ['red', 'yellow', 'green'].includes(i.sev));\n  const shown = visible.slice(0, SLACK_ISSUES_PER_CLIENT);\n  const hidden = visible.length - shown.length;\n  const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: DOT[card.status] + '  *<' + card.url + '|' + card.name + '>*' }, fields }];\n  if (shown.length) blocks.push({ type: 'section', text: { type: 'mrkdwn', text: _groupedLines(shown).join('\\n').slice(0, 2900) } });\n  else blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: '✅ Nothing to change' }] });\n  if (hidden > 0) blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: '+' + hidden + ' more · <' + card.url + '|open client> · <' + base + '/today|today>' }] });\n  blocks.push({ type: 'divider' });\n  return blocks;\n};\nconst renderSlack = (data) => {\n  const base = data.dashboard_url;\n  const [yy, mm, dd] = data.date.split('-').map(Number);\n  const dt = new Date(Date.UTC(yy, mm - 1, dd));\n  const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getUTCDay()];\n  const t = data.totals, cnt = data.counts;\n  const summary = [\n    { type: 'header', text: { type: 'plain_text', text: '📊 Ads daily report · ' + dayName + ', ' + _mdy(data.date) } },\n    { type: 'section', fields: [\n      { type: 'mrkdwn', text: '*🔴 Needs action*\\n' + cnt.red + ' clients' },\n      { type: 'mrkdwn', text: '*🟡 Watch*\\n' + cnt.yellow + ' clients' },\n      { type: 'mrkdwn', text: '*🟢 On target*\\n' + cnt.green + ' clients' },\n      { type: 'mrkdwn', text: '*⚪ Not graded*\\n' + cnt.grey + ' clients' },\n      { type: 'mrkdwn', text: '*Spend*  _yday · 7d · 30d_\\n' + _money(t.spend.y) + ' · ' + _money(t.spend.d7) + ' · ' + _money(t.spend.d30) },\n      { type: 'mrkdwn', text: '*Leads · Booked*  _7d_\\n' + _n(t.leads.d7) + ' leads · ' + _n(t.booked.d7) + ' booked' },\n    ] },\n  ];\n  if (data.top_actions.length) {\n    const lines = data.top_actions.slice(0, 6).map((i, n) => (n + 1) + '. ' + i.icon + ' *' + i.client + '*' + (i.campaign ? ' · ' + i.campaign : '') + ' — *' + i.label + '*: ' + _firstSentence(i.text, 90));\n    summary.push({ type: 'section', text: { type: 'mrkdwn', text: '*Top actions today*\\n' + lines.join('\\n') } });\n  }\n  if (data.wins.length) {\n    summary.push({ type: 'section', text: { type: 'mrkdwn', text: '*Ready to scale*\\n' + data.wins.slice(0, 4).map((i) => i.icon + ' *' + i.client + '* · ' + i.campaign + ' — ' + _firstSentence(i.text, 70)).join('\\n') } });\n  }\n  summary.push({ type: 'context', elements: [{ type: 'mrkdwn', text: LEGEND + '\\nKills and scales wait in the Actions queue — nothing changes until someone approves. <' + base + '/today|Open today\\'s board>' }] });\n  const messages = [summary];\n  let current = [];\n  let group = null;\n  for (const card of data.clients) {\n    const blocks = _clientBlocks(card, base);\n    let head = [];\n    if (card.status !== group) { group = card.status; head = [{ type: 'header', text: { type: 'plain_text', text: DOT[group] + ' ' + STATUS_LABEL[group] + ' (' + cnt[group] + ')' } }]; }\n    if (current.length && current.length + head.length + blocks.length > 48) { messages.push(current); current = []; }\n    current.push(...head, ...blocks);\n  }\n  if (current.length) messages.push(current);\n  return messages;\n};\nconst req = $('Webhook').first().json;\nconst user = $('Build user').first().json.user;\nreturn { y: yesterdayLA() };\n})();\nreturn [{ json: r && r.__fail ? { error: r.__fail } : { value: r ?? null } }];"
+      }
+    },
+    {
+      "id": "c2d09025-1455-4811-ac66-6384a9a97d0a",
+      "position": [
+        1980,
+        0
+      ],
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1fdb5ee6-9b3c-4627-a438-e557c9358805",
+              "leftValue": "={{ !$json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "7e905cc5-8b7b-49e5-a163-19ac09b29d6e",
+      "position": [
+        2200,
+        0
+      ],
+      "name": "Query",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "postgres": {
+          "id": "UmpkC3NkKcg32kNA",
+          "name": "ZMS Supabase Postgres"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with ads as (\n  select client_id,\n         sum(spend) filter (where date = $1::date) spend_1, sum(leads) filter (where date = $1::date) leads_1,\n         sum(spend) filter (where date > $1::date - 3) spend_3, sum(leads) filter (where date > $1::date - 3) leads_3,\n         sum(spend) filter (where date > $1::date - 7) spend_7, sum(leads) filter (where date > $1::date - 7) leads_7,\n         sum(spend) filter (where date > $1::date - 30) spend_30, sum(leads) filter (where date > $1::date - 30) leads_30,\n         sum(spend) filter (where date > $1::date - 14 and date <= $1::date - 7) spend_prev7,\n         sum(leads) filter (where date > $1::date - 14 and date <= $1::date - 7) leads_prev7,\n         max(date) filter (where leads > 0) last_lead\n  from ad_metrics_daily where date > $1::date - 60 and date <= $1::date group by client_id\n),\nghl as (\n  select client_id,\n         sum(appointments_booked) filter (where date = $1::date) booked_1,\n         sum(appointments_booked) filter (where date > $1::date - 7) booked_7,\n         sum(appointments_booked) filter (where date > $1::date - 30) booked_30,\n         sum(appointments_booked) filter (where date > $1::date - 14 and date <= $1::date - 7) booked_prev7\n  from ghl_metrics_daily where date > $1::date - 30 and date <= $1::date group by client_id\n),\ncl as (\n  select c.id, c.name, c.slug, c.booking_system, c.target_cpba, c.ghl_location_id,\n         a.spend_1, a.leads_1, a.spend_3, a.leads_3, a.spend_7, a.leads_7, a.spend_30, a.leads_30,\n         a.spend_prev7, a.leads_prev7, a.last_lead,\n         g.booked_1, g.booked_7, g.booked_30, g.booked_prev7\n  from clients c join ads a on a.client_id = c.id left join ghl g on g.client_id = c.id\n  where c.is_active and (coalesce(a.spend_7, 0) > 0 or coalesce(a.spend_prev7, 0) > 0)\n),\ndry as (\n  select client_id, platform, max(campaign_name) as name, sum(spend) as spend_3\n  from ad_metrics_daily where date > $1::date - 3 and date <= $1::date\n  group by client_id, platform, campaign_id\n  having sum(spend) >= 75 and sum(leads) = 0\n),\nadc as (\n  select l.ad_id, max(m.campaign_name) as campaign_name\n  from ad_level_metrics_daily l\n  join ad_metrics_daily m on m.client_id = l.client_id and m.campaign_id = l.campaign_id and m.date = l.date\n  where l.date > $1::date - 14 and l.date <= $1::date\n  group by l.ad_id\n),\nbr as (\n  select c.slug, b.brief_date, b.score, b.findings, b.platforms\n  from daily_briefs b join clients c on c.id = b.client_id\n  where b.brief_date = (select max(brief_date) from daily_briefs)\n),\nhl as (\n  select c.slug, h.check_key from integration_health h join clients c on c.id = h.client_id\n  where h.status = 'red' and c.is_active\n)\nselect json_build_object(\n  'clients', coalesce((select json_agg(cl) from cl), '[]'::json),\n  'dry', coalesce((select json_agg(d order by d.spend_3 desc) from dry d), '[]'::json),\n  'ad_campaigns', coalesce((select json_object_agg(ad_id, campaign_name) from adc), '{}'::json),\n  'briefs', coalesce((select json_agg(br) from br), '[]'::json),\n  'health', coalesce((select json_agg(hl) from hl), '[]'::json)\n) as data",
+        "options": {
+          "queryReplacement": "={{ [$('Validate').first().json.value.y] }}"
+        }
+      }
+    },
+    {
+      "id": "292cbd05-51d8-4dd7-a46e-0e5720c82fbe",
+      "position": [
+        2420,
+        200
+      ],
+      "name": "DB error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const out = (() => {\n// Public dashboard URL (links in cards / Slack). Backend default: settings.dashboard_url.\nconst DASHBOARD_URL = 'https://zms-ad-reporting.netlify.app';\n// Dates are computed in the backend's timezone (TZ=America/Los_Angeles); ISO yyyy-mm-dd strings.\nconst todayLA = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());\nconst addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };\nconst yesterdayLA = () => addDays(todayLA(), -1);\n\n// Python's round(x, n) for display values (half-to-even on exact ties is not reproduced).\nconst pyRound = (x, n = 0) => (x === null || x === undefined ? x : Number(Number(x).toFixed(n)));\nconst num = (x) => (x === null || x === undefined ? 0 : Number(x));\nconst safeDiv = (a, b) => (b ? pyRound(a / b, 2) : null);\n\n// economics.py\nconst maxCpba = (job, close, margin, share) => {\n  const j = Number(job || 0);\n  if (!(j > 0)) return null;\n  return pyRound(j * Number(close || 0) * Number(margin || 0) * Number(share || 0), 2);\n};\nconst cpbaColor = (cpba, ceiling) => {\n  if (cpba === null || cpba === undefined || !ceiling) return null;\n  return cpba <= ceiling * 0.75 ? 'green' : cpba <= ceiling ? 'yellow' : 'red';\n};\n\n// targets.py — targets: array of service_targets rows\nconst indexTargets = (rows) => {\n  const m = new Map();\n  for (const r of rows || []) m.set(r.service + '|' + r.platform, r);\n  return m;\n};\nconst resolveTarget = (tg, service, platform) => {\n  if (!service) return null;\n  return tg.get(service + '|' + (platform || 'all')) || tg.get(service + '|all') || null;\n};\n// overview.py _expected: lead-weighted (else spend-weighted) CPL green/red for service rows\nconst expectedCpl = (rows, tg, clientGreen, clientRed) => {\n  let wg = 0, wr = 0, ws = 0;\n  for (const r of rows) {\n    const t = resolveTarget(tg, r.service, r.platform);\n    const g = t && t.cpl_green !== null && t.cpl_green !== undefined ? Number(t.cpl_green) : clientGreen;\n    const rd = t && t.cpl_red !== null && t.cpl_red !== undefined ? Number(t.cpl_red) : t ? g * 1.5 : clientRed;\n    const w = num(r.leads) || num(r.spend) * 0.01;\n    if (w <= 0) continue;\n    wg += g * w; wr += rd * w; ws += w;\n  }\n  return ws === 0 ? null : [pyRound(wg / ws, 2), pyRound(wr / ws, 2)];\n};\n\n// Rejections from a Validate step. fail() for plain errors, invalid() for FastAPI-style 422s.\nconst fail = (status, detail) => ({ __fail: { status, detail } });\nconst isDate = (s) => typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));\nconst invalid = (loc, msg, type = 'value_error') => fail(422, [{ type, loc, msg }]);\n\n// Minimal pydantic: spec = { field: { type: 'str'|'num'|'bool', required?, nullable?, min?, max?,\n// pattern?, default?, ge?, le?, int? } }. Unknown keys are rejected (extra=\"forbid\") unless allowExtra; strings are capped at 500 chars\n// (str_max_length). partial=true validates only the keys present (exclude_unset). Returns\n// { value } or a fail().\nconst checkBody = (spec, body, partial = false, allowExtra = false) => {\n  if (body === null || typeof body !== 'object' || Array.isArray(body)) {\n    return invalid(['body'], 'Input should be a valid dictionary', 'dict_type');\n  }\n  const errors = [];\n  const out = {};\n  for (const k of Object.keys(body)) {\n    if (!allowExtra && !(k in spec)) errors.push({ type: 'extra_forbidden', loc: ['body', k], msg: 'Extra inputs are not permitted' });\n  }\n  for (const [k, f] of Object.entries(spec)) {\n    const present = Object.prototype.hasOwnProperty.call(body, k);\n    if (!present) {\n      if (f.required && !partial) errors.push({ type: 'missing', loc: ['body', k], msg: 'Field required' });\n      else if (!partial) out[k] = f.default ?? null;\n      continue;\n    }\n    let v = body[k];\n    if (v === null) {\n      if (f.nullable === false) errors.push({ type: f.type + '_type', loc: ['body', k], msg: 'Input should not be None' });\n      out[k] = null;\n      continue;\n    }\n    if (f.type === 'str') {\n      if (typeof v !== 'string') { errors.push({ type: 'string_type', loc: ['body', k], msg: 'Input should be a valid string' }); continue; }\n      const max = Math.min(f.max ?? 500, 500);\n      if (f.min && v.length < f.min) errors.push({ type: 'string_too_short', loc: ['body', k], msg: 'String should have at least ' + f.min + ' character' + (f.min === 1 ? '' : 's') });\n      if (v.length > max) errors.push({ type: 'string_too_long', loc: ['body', k], msg: 'String should have at most ' + max + ' characters' });\n      if (f.pattern && !new RegExp(f.pattern).test(v)) errors.push({ type: 'string_pattern_mismatch', loc: ['body', k], msg: \"String should match pattern '\" + f.pattern + \"'\" });\n    } else if (f.type === 'num') {\n      if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) v = Number(v);\n      if (typeof v !== 'number' || !Number.isFinite(v)) { errors.push({ type: 'float_parsing', loc: ['body', k], msg: 'Input should be a valid number' }); continue; }\n      if (f.ge !== undefined && v < f.ge) errors.push({ type: 'greater_than_equal', loc: ['body', k], msg: 'Input should be greater than or equal to ' + f.ge });\n      if (f.le !== undefined && v > f.le) errors.push({ type: 'less_than_equal', loc: ['body', k], msg: 'Input should be less than or equal to ' + f.le });\n      if (f.int && !Number.isInteger(v)) errors.push({ type: 'int_from_float', loc: ['body', k], msg: 'Input should be a valid integer, got a number with a fractional part' });\n    } else if (f.type === 'bool') {\n      if (typeof v !== 'boolean') { errors.push({ type: 'bool_parsing', loc: ['body', k], msg: 'Input should be a valid boolean' }); continue; }\n    }\n    out[k] = v;\n  }\n  return errors.length ? fail(422, errors) : { value: out };\n};\n\n// audit_log context from the webhook request (core/audit.py client_ip + user agent)\nconst auditCtx = (req, user) => {\n  const h = req.headers || {};\n  let ip = h['cf-connecting-ip'] || h['x-real-ip'] || (h['x-forwarded-for'] || '').split(',')[0].trim() || null;\n  if (ip && !/^[0-9a-fA-F:.]{2,45}$/.test(ip)) ip = null; // only values the ::inet cast accepts\n  const ua = h['user-agent'] ? String(h['user-agent']).slice(0, 500) : null;\n  return { actor_id: user ? user.id : null, actor_email: user ? user.email : null, ip, user_agent: ua };\n};\nconst INTEGRATION_LABELS = {\n  meta_sync: 'Meta Ads', google_sync: 'Google Ads', lsa_sync: 'Local Services Ads', ghl_token: 'GHL connection',\n  ghl_stage_scheduled: 'Scheduled Appointment stage', ghl_stage_confirmed: 'Confirmed Appointment stage',\n  ghl_won: 'Won opportunities', ghl_paid_attribution: 'Paid attribution on leads',\n  ghl_appointments: 'Bookings from paid leads', utm_tags: 'Ad URL tagging', pixel_capi: 'Pixel / CAPI',\n  landing_pages: 'Landing pages',\n};\nconst PLAYS = {\n  kill: ['⛔', 'Kill'], kill_or_rebuild: ['⛔', 'Kill or rebuild'], fix_tracking: ['🛠', 'Fix tracking'],\n  fix_page: ['🐢', 'Fix landing page'], fix_form: ['📝', 'Fix form / offer'], new_hook: ['🎣', 'New hook'],\n  sharper_hook: ['🎣', 'Sharpen hook'], swap_open: ['🎣', 'Swap first 3 seconds'], fix_promise: ['🎬', 'Deliver the promise sooner'],\n  new_angle: ['💡', 'New angle'], fresh_test: ['🔁', 'Launch fresh test'], add_diversity: ['🎨', 'Add a new concept'],\n  trim_ads: ['✂️', 'Too many ads'], add_ads: ['➕', 'Add ads'], consolidate: ['🧱', 'Consolidate budget'],\n  fix_followup: ['📞', 'Fix lead follow-up'], quality: ['⚠️', 'Fix confirmations'], diagnose: ['🔎', 'Diagnose'],\n  scale: ['🚀', 'Scale'], micro_scale: ['📈', 'Micro-scale'], no_leads: ['📉', 'No leads'],\n  no_bookings: ['📅', 'No bookings'], over_target: ['💸', 'Over target'], cpl_up: ['🔺', 'CPL rising'],\n  spend_stopped: ['⏸', 'Spend stopped'], search_terms: ['🔍', 'Search-term waste'], junk_traffic: ['🗑', 'Junk traffic'],\n  integration: ['🔌', 'Integration'], note: ['ℹ️', 'Note'],\n};\nconst LEGEND = '⛔ kill · 🛠 fix tracking · 🐢 fix page · 📝 fix form · 🎣 new hook · 🎬 promise sooner · 💡 new angle · 🔁 fresh test · 🎨 new concept · ✂️ too many ads · 🧱 consolidate · 📞 follow-up · 🚀 scale';\nconst VERDICT_PLAY = { fix: ['fix_tracking', 'red'], kill: ['kill', 'red'], kill_or_rebuild: ['kill_or_rebuild', 'red'],\n  quality_fail: ['quality', 'yellow'], diagnose: ['diagnose', 'yellow'], scale: ['scale', 'green'], micro_scale: ['micro_scale', 'green'] };\nconst KIND_PLAY = [['landing_page_broken', 'fix_page'], ['missing_utm', 'fix_tracking'], ['signal_gap', 'fix_tracking'],\n  ['google_junk_traffic', 'junk_traffic'], ['google_unmanaged_terms', 'search_terms'],\n  ['cpba_unprofitable', 'over_target'], ['no_appointments', 'no_bookings'], ['spend_stopped', 'spend_stopped']];\nconst RANK = { red: 0, yellow: 1, green: 2, grey: 3, info: 4 };\nconst DOT = { red: '🔴', yellow: '🟡', green: '🟢', grey: '⚪' };\nconst STATUS_LABEL = { red: 'Needs action', yellow: 'Watch', green: 'On target', grey: 'Not graded' };\nconst NO_LEADS_MIN_SPEND = 50.0, CPL_UP = 0.30, CPL_MIN_LEADS = 3, SLACK_ISSUES_PER_CLIENT = 5;\n\n// Python formatting\nconst rhe = (x) => { const f = Math.floor(x); const d = x - f; return d > 0.5 ? f + 1 : d < 0.5 ? f : (f % 2 === 0 ? f : f + 1); };\nconst grp = (v, d) => Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });\nconst _f = (v) => (v === null || v === undefined ? 0 : Number(v));\nconst _money = (v) => {\n  if (v === null || v === undefined) return '—';\n  if (v >= 10000) return '$' + grp(v / 1000, 1) + 'k';\n  return v >= 100 ? '$' + grp(v, 0) : '$' + grp(v, 2);\n};\nconst _n = (v) => { v = _f(v); return Math.abs(v - rhe(v)) < 0.05 ? v.toFixed(0) : v.toFixed(1); };\nconst _pct0 = (x) => rhe(x * 100) + '%';\nconst _delta = (now, before) => { if (before <= 0) return null; const p = rhe((now - before) / before * 100); return Math.abs(p) >= 10 ? p : null; };\nconst _mdy = (iso) => { const [y, m, d] = iso.split('-').map(Number); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1] + ' ' + d; };\nconst _lstrip = (s) => s.replace(/^[ :—-]+/, '');\n\nconst _human = (s) => {\n  s = s || '';\n  s = s.replace(/Gate [ABC]:\\s*/g, '');\n  s = s.split('CPAₛ').join('cost per booked').split('Tₛ').join('target').split('T꜀').join('confirmed target');\n  s = s.split('scheduled').join('booked').split('two-window: ').join('');\n  s = s.replace(/(\\d+(?:\\.\\d+)?)×\\s?target/g, '$1× target');\n  s = s.includes('0 booked after')\n    ? s.split('0 booked after').join('0 booked after spending').split('× target').join('× the target')\n    : s.split('×target').join('× target');\n  s = s.split('≤').join('at or under ').split('in 7d and 14d').join('in both 7 and 14 days');\n  s = s.replace(/\\s{2,}/g, ' ').split('near target: ').join('');\n  return s.trim();\n};\nconst _firstSentence = (s, n = 110) => {\n  s = (s || '').split(';')[0].split('. ')[0].trim().replace(/\\.+$/, '');\n  return s.length <= n ? s : s.slice(0, n - 1).replace(/\\s+$/, '') + '…';\n};\nconst _issue = (play, sev, text, campaign = null, nextStep = null) => {\n  const [icon, label] = PLAYS[play] || PLAYS.note;\n  text = text.trim();\n  const words = label.split(' ');\n  for (const prefix of [label, words[0] + ' ' + (label.includes(' ') ? words[1] : '')]) {\n    const p = prefix.trim();\n    if (p && text.toLowerCase().startsWith(p.toLowerCase())) {\n      const rest = _lstrip(text.slice(p.length));\n      text = rest ? rest[0].toUpperCase() + rest.slice(1) : text;\n      break;\n    }\n  }\n  return { play, icon, label, sev, campaign, text: text.trim().replace(/\\.+$/, ''), next: nextStep ? _firstSentence(nextStep) : null };\n};\nconst _tracks = (c) => c.booking_system === 'sheet' || (c.booking_system === 'ghl' && !!c.ghl_location_id);\nconst _layerPlay = (layer) => {\n  const l = (layer || '').toLowerCase();\n  if (l.includes('hook')) return 'new_hook';\n  if (l.includes('ctr') || l.includes('angle')) return 'new_angle';\n  if (l.includes('landing page') || l.includes('page /')) return 'fix_page';\n  if (l.includes('form')) return 'fix_form';\n  if (l.includes('lead quality') || l.includes('speed')) return 'fix_followup';\n  return 'diagnose';\n};\nconst _campaignOf = (f, adCampaigns) => {\n  if (f.campaign) return f.campaign;\n  if (f.entity_type === 'campaign') return f.entity_name ?? null;\n  if (f.entity_type === 'ad') return adCampaigns[String(f.entity_id)] ?? null;\n  return null;\n};\nconst _stripCampaign = (msg, campaign) => {\n  if (!campaign) return msg;\n  msg = msg.split(' in ' + campaign).join('');\n  if (msg.startsWith(campaign)) msg = _lstrip(msg.slice(campaign.length).replace(/^\\s*\\([^)]*\\)/, ''));\n  return msg;\n};\n\nconst _alertIssues = (c, dry) => {\n  const out = [];\n  const spend3 = _f(c.spend_3), leads3 = _f(c.leads_3);\n  if (spend3 >= NO_LEADS_MIN_SPEND && leads3 === 0) {\n    const since = c.last_lead ? 'last lead ' + _mdy(c.last_lead) : 'none in 60 days';\n    out.push(_issue('no_leads', 'red', 'No leads in the last 3 days on ' + _money(spend3) + ' (' + since + ')', null,\n      'Check delivery, the form and the creative today'));\n  } else {\n    for (const d of dry.slice(0, 4)) {\n      out.push(_issue('no_leads', 'yellow', 'No leads in 3 days on ' + _money(_f(d.spend_3)) + ' (' + d.platform + ')', d.name));\n    }\n  }\n  const l7 = _f(c.leads_7), lp = _f(c.leads_prev7);\n  if (l7 >= CPL_MIN_LEADS && lp >= CPL_MIN_LEADS) {\n    const cpl7 = _f(c.spend_7) / l7, cplp = _f(c.spend_prev7) / lp;\n    if (cplp && (cpl7 - cplp) / cplp >= CPL_UP) {\n      out.push(_issue('cpl_up', 'yellow', 'CPL up ' + _pct0((cpl7 - cplp) / cplp) + ' week over week, ' + _money(cplp) + ' → ' + _money(cpl7), null,\n        'Diagnostic only — bookings decide; check the plays below'));\n    }\n  }\n  if (_tracks(c) && _f(c.booked_7) === 0 && _f(c.booked_prev7) >= 2) {\n    out.push(_issue('no_bookings', 'red', 'Bookings stopped: 0 this week vs ' + _n(c.booked_prev7) + ' last week', null,\n      'Check GHL stages and setter follow-up'));\n  }\n  return out;\n};\n\nconst _briefIssues = (brief, adCampaigns) => {\n  const out = [];\n  if (!brief) return out;\n  const findings = brief.findings || [];\n  for (const f of findings) {\n    if (f.kind === 'sop_verdict' && VERDICT_PLAY[f.verdict]) {\n      let [play, sev] = VERDICT_PLAY[f.verdict];\n      if (play === 'diagnose') play = _layerPlay(f.layer);\n      const d = f.decision || {};\n      let text = _human(f.gate);\n      if (f.proposed_value) text = f.proposed_value + ' — ' + text;\n      if (f.layer && sev !== 'green') text += '; ' + _human(f.layer.split(':')[0]);\n      out.push(_issue(play, sev, text, f.entity_name ?? null, d.next_step ?? null));\n    }\n  }\n  for (const f of findings) {\n    if (f.kind === 'creative_signal' && (f.severity === 'yellow' || f.severity === 'info')) {\n      const camp = f.entity_type !== 'campaign' ? _campaignOf(f, adCampaigns) : (f.entity_name ?? null);\n      out.push({ ..._issue(f.play, f.severity, f.text || f.message, camp, f.next_step ?? null),\n        where: f.entity_type === 'ad' || f.entity_type === 'adset' ? (f.entity_name ?? null) : null,\n        where_type: f.entity_type ?? null, advice: true });\n    }\n  }\n  for (const [kind, play] of KIND_PLAY) {\n    const seen = new Set();\n    for (const f of findings) {\n      if (f.kind !== kind || (f.severity !== 'red' && f.severity !== 'yellow')) continue;\n      const camp = _campaignOf(f, adCampaigns);\n      if (seen.has(camp) || seen.size >= 3) continue;\n      seen.add(camp);\n      out.push(_issue(play, f.severity, _stripCampaign(f.message, camp).slice(0, 220), camp));\n      if (camp === null) break;\n    }\n  }\n  return out;\n};\n\n// data = TODAY_SQL result; y = ISO date string\nconst buildCards = (data, y) => {\n  const base = DASHBOARD_URL.replace(/\\/+$/, '');\n  const briefs = {};\n  for (const b of data.briefs) briefs[b.slug] = b;\n  const dry = {};\n  for (const r of data.dry) (dry[r.client_id] ||= []).push(r);\n  const reds = {};\n  for (const r of data.health) (reds[r.slug] ||= new Set()).add(INTEGRATION_LABELS[r.check_key] || r.check_key.split('_').join(' '));\n\n  const cards = [];\n  for (const c of data.clients) {\n    const brief = briefs[c.slug] || null;\n    const tracks = _tracks(c);\n    const b7 = _f(c.booked_7), spend7 = _f(c.spend_7), leads7 = _f(c.leads_7);\n    const cpba7 = b7 ? spend7 / b7 : null;\n    const bt = ((brief || {}).platforms || {}).totals || {};\n    const ts = _f(c.target_cpba) || _f(bt.expected_cpba_green) || _f(bt.cpba_max) || null;\n\n    let status = 'grey';\n    const first = [];\n    if (tracks && ts) {\n      if (b7 >= 3 && cpba7 !== null) {\n        status = cpba7 <= ts ? 'green' : cpba7 <= ts * 1.3 ? 'yellow' : 'red';\n        if (status !== 'green') first.push(_issue('over_target', status, 'Cost per booked ' + _money(cpba7) + ' vs ' + _money(ts) + ' target (' + (cpba7 / ts).toFixed(1) + '×) on ' + _n(b7) + ' bookings'));\n      } else if (b7 > 0 && cpba7 !== null) {\n        status = cpba7 <= ts ? 'green' : 'yellow';\n        if (status === 'yellow') first.push(_issue('over_target', 'yellow', 'Cost per booked ' + _money(cpba7) + ' vs ' + _money(ts) + ' target, only ' + _n(b7) + ' booking' + (b7 !== 1 ? 's' : '') + ' — too thin to act on'));\n      } else if (spend7 >= Math.max(ts, 150)) {\n        status = 'red';\n        first.push(_issue('no_bookings', 'red', 'No bookings this week on ' + _money(spend7) + ' (' + (spend7 / ts).toFixed(1) + '× the ' + _money(ts) + ' target)', null,\n          'Audit lead quality and setter follow-up'));\n      }\n    } else if (tracks && b7 === 0 && spend7 >= 150) {\n      status = 'red';\n      first.push(_issue('no_bookings', 'red', 'No bookings this week on ' + _money(spend7)));\n    }\n\n    const issues = [...first, ..._alertIssues(c, dry[c.id] || []), ..._briefIssues(brief, data.ad_campaigns || {})];\n    if (reds[c.slug]) issues.push(_issue('integration', 'yellow', [...reds[c.slug]].sort().join(', ') + ' not working — see the Integrations page'));\n    if (!tracks) issues.push(_issue('note', 'info', 'Bookings not tracked — no GHL location or booking sheet linked'));\n    for (const i of issues) {\n      if ((i.sev === 'red' || i.sev === 'yellow') && i.play !== 'note' && i.play !== 'integration' && !i.advice && RANK[i.sev] < RANK[status]) status = i.sev;\n    }\n    issues.sort((a, b) => RANK[a.sev] - RANK[b.sev] || (a.campaign ? 1 : 0) - (b.campaign ? 1 : 0));\n\n    cards.push({\n      slug: c.slug, name: c.name, status, url: base + '/clients/' + c.slug,\n      tracks_bookings: tracks, target_cpba: ts,\n      leads: { y: _f(c.leads_1), d7: leads7, d30: _f(c.leads_30), delta7: _delta(leads7, _f(c.leads_prev7)) },\n      booked: tracks ? { y: _f(c.booked_1), d7: b7, d30: _f(c.booked_30), delta7: _delta(b7, _f(c.booked_prev7)) } : null,\n      spend: { y: _f(c.spend_1), d7: spend7, d30: _f(c.spend_30) },\n      cpl7: leads7 ? spend7 / leads7 : null, cpba7,\n      issues, spend30: _f(c.spend_30),\n    });\n  }\n  cards.sort((a, b) => RANK[a.status] - RANK[b.status] || b.spend30 - a.spend30);\n  const counts = {};\n  for (const k of ['red', 'yellow', 'green', 'grey']) counts[k] = cards.filter((x) => x.status === k).length;\n  const tot = (k, w) => cards.reduce((s, x) => s + (x[k] ? _f(x[k][w]) : 0), 0);\n  const totals = {};\n  for (const k of ['spend', 'leads', 'booked']) totals[k] = { y: tot(k, 'y'), d7: tot(k, 'd7'), d30: tot(k, 'd30') };\n  const top = [];\n  for (const x of cards) for (const i of x.issues) {\n    if ((i.sev === 'red' || i.sev === 'yellow') && !['note', 'integration', 'cpl_up'].includes(i.play)) top.push({ ...i, client: x.name, slug: x.slug, spend30: x.spend30 });\n  }\n  top.sort((a, b) => RANK[a.sev] - RANK[b.sev] || b.spend30 - a.spend30);\n  const wins = [];\n  for (const x of cards) for (const i of x.issues) if (i.play === 'scale' || i.play === 'micro_scale') wins.push({ ...i, client: x.name, slug: x.slug });\n  const bd = data.briefs.find((b) => b.brief_date);\n  return { date: y, brief_date: bd ? bd.brief_date : null, counts, totals,\n    top_actions: top.slice(0, 8), wins, clients: cards, legend: LEGEND, dashboard_url: base };\n};\n\n// ---- Slack rendering (render_slack)\nconst _playLine = (i, indent) => {\n  const sub = i.where && i.where_type === 'ad' ? i.where + ': ' : '';\n  let line = indent + i.icon + ' *' + i.label + '* — ' + sub + i.text;\n  if (i.next && i.play !== 'over_target') line += '\\n' + indent + '      _→ ' + i.next + '_';\n  return line;\n};\nconst _groupedLines = (issues) => {\n  const lines = issues.filter((i) => !i.campaign).map((i) => _playLine(i, ''));\n  const order = [];\n  const by = {};\n  for (const i of issues) if (i.campaign) { if (!by[i.campaign]) { order.push(i.campaign); by[i.campaign] = []; } by[i.campaign].push(i); }\n  for (const camp of order) { lines.push('*' + camp + '*'); for (const i of by[camp]) lines.push(_playLine(i, '    ')); }\n  return lines;\n};\nconst _arrow = (d) => (d === null || d === undefined ? '' : d > 0 ? ' ▲' + d + '%' : ' ▼' + Math.abs(d) + '%');\nconst _clientBlocks = (card, base) => {\n  const b = card.booked;\n  const fields = [\n    { type: 'mrkdwn', text: '*Leads*  _yday · 7d · 30d_\\n' + _n(card.leads.y) + ' · ' + _n(card.leads.d7) + _arrow(card.leads.delta7) + ' · ' + _n(card.leads.d30) },\n    { type: 'mrkdwn', text: b ? '*Booked*  _yday · 7d · 30d_\\n' + _n(b.y) + ' · ' + _n(b.d7) + _arrow(b.delta7) + ' · ' + _n(b.d30) : '*Booked*\\n_not tracked_' },\n    { type: 'mrkdwn', text: '*7-day spend · CPL*\\n' + _money(card.spend.d7) + ' · ' + _money(card.cpl7) },\n    { type: 'mrkdwn', text: '*Cost per booked*  _7d_\\n' + _money(card.cpba7) + (card.target_cpba && card.cpba7 ? '  vs ' + _money(card.target_cpba) + ' target' : '') },\n  ];\n  const visible = card.issues.filter((i) => ['red', 'yellow', 'green'].includes(i.sev));\n  const shown = visible.slice(0, SLACK_ISSUES_PER_CLIENT);\n  const hidden = visible.length - shown.length;\n  const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: DOT[card.status] + '  *<' + card.url + '|' + card.name + '>*' }, fields }];\n  if (shown.length) blocks.push({ type: 'section', text: { type: 'mrkdwn', text: _groupedLines(shown).join('\\n').slice(0, 2900) } });\n  else blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: '✅ Nothing to change' }] });\n  if (hidden > 0) blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: '+' + hidden + ' more · <' + card.url + '|open client> · <' + base + '/today|today>' }] });\n  blocks.push({ type: 'divider' });\n  return blocks;\n};\nconst renderSlack = (data) => {\n  const base = data.dashboard_url;\n  const [yy, mm, dd] = data.date.split('-').map(Number);\n  const dt = new Date(Date.UTC(yy, mm - 1, dd));\n  const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getUTCDay()];\n  const t = data.totals, cnt = data.counts;\n  const summary = [\n    { type: 'header', text: { type: 'plain_text', text: '📊 Ads daily report · ' + dayName + ', ' + _mdy(data.date) } },\n    { type: 'section', fields: [\n      { type: 'mrkdwn', text: '*🔴 Needs action*\\n' + cnt.red + ' clients' },\n      { type: 'mrkdwn', text: '*🟡 Watch*\\n' + cnt.yellow + ' clients' },\n      { type: 'mrkdwn', text: '*🟢 On target*\\n' + cnt.green + ' clients' },\n      { type: 'mrkdwn', text: '*⚪ Not graded*\\n' + cnt.grey + ' clients' },\n      { type: 'mrkdwn', text: '*Spend*  _yday · 7d · 30d_\\n' + _money(t.spend.y) + ' · ' + _money(t.spend.d7) + ' · ' + _money(t.spend.d30) },\n      { type: 'mrkdwn', text: '*Leads · Booked*  _7d_\\n' + _n(t.leads.d7) + ' leads · ' + _n(t.booked.d7) + ' booked' },\n    ] },\n  ];\n  if (data.top_actions.length) {\n    const lines = data.top_actions.slice(0, 6).map((i, n) => (n + 1) + '. ' + i.icon + ' *' + i.client + '*' + (i.campaign ? ' · ' + i.campaign : '') + ' — *' + i.label + '*: ' + _firstSentence(i.text, 90));\n    summary.push({ type: 'section', text: { type: 'mrkdwn', text: '*Top actions today*\\n' + lines.join('\\n') } });\n  }\n  if (data.wins.length) {\n    summary.push({ type: 'section', text: { type: 'mrkdwn', text: '*Ready to scale*\\n' + data.wins.slice(0, 4).map((i) => i.icon + ' *' + i.client + '* · ' + i.campaign + ' — ' + _firstSentence(i.text, 70)).join('\\n') } });\n  }\n  summary.push({ type: 'context', elements: [{ type: 'mrkdwn', text: LEGEND + '\\nKills and scales wait in the Actions queue — nothing changes until someone approves. <' + base + '/today|Open today\\'s board>' }] });\n  const messages = [summary];\n  let current = [];\n  let group = null;\n  for (const card of data.clients) {\n    const blocks = _clientBlocks(card, base);\n    let head = [];\n    if (card.status !== group) { group = card.status; head = [{ type: 'header', text: { type: 'plain_text', text: DOT[group] + ' ' + STATUS_LABEL[group] + ' (' + cnt[group] + ')' } }]; }\n    if (current.length && current.length + head.length + blocks.length > 48) { messages.push(current); current = []; }\n    current.push(...head, ...blocks);\n  }\n  if (current.length) messages.push(current);\n  return messages;\n};\nconst req = $('Webhook').first().json;\nconst user = $('Build user').first().json.user;\nconst input = $('Validate').first().json.value;\nconst err = $json.error;\nreturn { status: 500, body: { detail: 'Internal Server Error' } };\n})();\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "e4ed7a14-9200-4a97-af01-4a372b131ffb",
+      "position": [
+        2640,
+        0
+      ],
+      "name": "Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const out = (() => {\n// Public dashboard URL (links in cards / Slack). Backend default: settings.dashboard_url.\nconst DASHBOARD_URL = 'https://zms-ad-reporting.netlify.app';\n// Dates are computed in the backend's timezone (TZ=America/Los_Angeles); ISO yyyy-mm-dd strings.\nconst todayLA = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());\nconst addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };\nconst yesterdayLA = () => addDays(todayLA(), -1);\n\n// Python's round(x, n) for display values (half-to-even on exact ties is not reproduced).\nconst pyRound = (x, n = 0) => (x === null || x === undefined ? x : Number(Number(x).toFixed(n)));\nconst num = (x) => (x === null || x === undefined ? 0 : Number(x));\nconst safeDiv = (a, b) => (b ? pyRound(a / b, 2) : null);\n\n// economics.py\nconst maxCpba = (job, close, margin, share) => {\n  const j = Number(job || 0);\n  if (!(j > 0)) return null;\n  return pyRound(j * Number(close || 0) * Number(margin || 0) * Number(share || 0), 2);\n};\nconst cpbaColor = (cpba, ceiling) => {\n  if (cpba === null || cpba === undefined || !ceiling) return null;\n  return cpba <= ceiling * 0.75 ? 'green' : cpba <= ceiling ? 'yellow' : 'red';\n};\n\n// targets.py — targets: array of service_targets rows\nconst indexTargets = (rows) => {\n  const m = new Map();\n  for (const r of rows || []) m.set(r.service + '|' + r.platform, r);\n  return m;\n};\nconst resolveTarget = (tg, service, platform) => {\n  if (!service) return null;\n  return tg.get(service + '|' + (platform || 'all')) || tg.get(service + '|all') || null;\n};\n// overview.py _expected: lead-weighted (else spend-weighted) CPL green/red for service rows\nconst expectedCpl = (rows, tg, clientGreen, clientRed) => {\n  let wg = 0, wr = 0, ws = 0;\n  for (const r of rows) {\n    const t = resolveTarget(tg, r.service, r.platform);\n    const g = t && t.cpl_green !== null && t.cpl_green !== undefined ? Number(t.cpl_green) : clientGreen;\n    const rd = t && t.cpl_red !== null && t.cpl_red !== undefined ? Number(t.cpl_red) : t ? g * 1.5 : clientRed;\n    const w = num(r.leads) || num(r.spend) * 0.01;\n    if (w <= 0) continue;\n    wg += g * w; wr += rd * w; ws += w;\n  }\n  return ws === 0 ? null : [pyRound(wg / ws, 2), pyRound(wr / ws, 2)];\n};\n\n// Rejections from a Validate step. fail() for plain errors, invalid() for FastAPI-style 422s.\nconst fail = (status, detail) => ({ __fail: { status, detail } });\nconst isDate = (s) => typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));\nconst invalid = (loc, msg, type = 'value_error') => fail(422, [{ type, loc, msg }]);\n\n// Minimal pydantic: spec = { field: { type: 'str'|'num'|'bool', required?, nullable?, min?, max?,\n// pattern?, default?, ge?, le?, int? } }. Unknown keys are rejected (extra=\"forbid\") unless allowExtra; strings are capped at 500 chars\n// (str_max_length). partial=true validates only the keys present (exclude_unset). Returns\n// { value } or a fail().\nconst checkBody = (spec, body, partial = false, allowExtra = false) => {\n  if (body === null || typeof body !== 'object' || Array.isArray(body)) {\n    return invalid(['body'], 'Input should be a valid dictionary', 'dict_type');\n  }\n  const errors = [];\n  const out = {};\n  for (const k of Object.keys(body)) {\n    if (!allowExtra && !(k in spec)) errors.push({ type: 'extra_forbidden', loc: ['body', k], msg: 'Extra inputs are not permitted' });\n  }\n  for (const [k, f] of Object.entries(spec)) {\n    const present = Object.prototype.hasOwnProperty.call(body, k);\n    if (!present) {\n      if (f.required && !partial) errors.push({ type: 'missing', loc: ['body', k], msg: 'Field required' });\n      else if (!partial) out[k] = f.default ?? null;\n      continue;\n    }\n    let v = body[k];\n    if (v === null) {\n      if (f.nullable === false) errors.push({ type: f.type + '_type', loc: ['body', k], msg: 'Input should not be None' });\n      out[k] = null;\n      continue;\n    }\n    if (f.type === 'str') {\n      if (typeof v !== 'string') { errors.push({ type: 'string_type', loc: ['body', k], msg: 'Input should be a valid string' }); continue; }\n      const max = Math.min(f.max ?? 500, 500);\n      if (f.min && v.length < f.min) errors.push({ type: 'string_too_short', loc: ['body', k], msg: 'String should have at least ' + f.min + ' character' + (f.min === 1 ? '' : 's') });\n      if (v.length > max) errors.push({ type: 'string_too_long', loc: ['body', k], msg: 'String should have at most ' + max + ' characters' });\n      if (f.pattern && !new RegExp(f.pattern).test(v)) errors.push({ type: 'string_pattern_mismatch', loc: ['body', k], msg: \"String should match pattern '\" + f.pattern + \"'\" });\n    } else if (f.type === 'num') {\n      if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) v = Number(v);\n      if (typeof v !== 'number' || !Number.isFinite(v)) { errors.push({ type: 'float_parsing', loc: ['body', k], msg: 'Input should be a valid number' }); continue; }\n      if (f.ge !== undefined && v < f.ge) errors.push({ type: 'greater_than_equal', loc: ['body', k], msg: 'Input should be greater than or equal to ' + f.ge });\n      if (f.le !== undefined && v > f.le) errors.push({ type: 'less_than_equal', loc: ['body', k], msg: 'Input should be less than or equal to ' + f.le });\n      if (f.int && !Number.isInteger(v)) errors.push({ type: 'int_from_float', loc: ['body', k], msg: 'Input should be a valid integer, got a number with a fractional part' });\n    } else if (f.type === 'bool') {\n      if (typeof v !== 'boolean') { errors.push({ type: 'bool_parsing', loc: ['body', k], msg: 'Input should be a valid boolean' }); continue; }\n    }\n    out[k] = v;\n  }\n  return errors.length ? fail(422, errors) : { value: out };\n};\n\n// audit_log context from the webhook request (core/audit.py client_ip + user agent)\nconst auditCtx = (req, user) => {\n  const h = req.headers || {};\n  let ip = h['cf-connecting-ip'] || h['x-real-ip'] || (h['x-forwarded-for'] || '').split(',')[0].trim() || null;\n  if (ip && !/^[0-9a-fA-F:.]{2,45}$/.test(ip)) ip = null; // only values the ::inet cast accepts\n  const ua = h['user-agent'] ? String(h['user-agent']).slice(0, 500) : null;\n  return { actor_id: user ? user.id : null, actor_email: user ? user.email : null, ip, user_agent: ua };\n};\nconst INTEGRATION_LABELS = {\n  meta_sync: 'Meta Ads', google_sync: 'Google Ads', lsa_sync: 'Local Services Ads', ghl_token: 'GHL connection',\n  ghl_stage_scheduled: 'Scheduled Appointment stage', ghl_stage_confirmed: 'Confirmed Appointment stage',\n  ghl_won: 'Won opportunities', ghl_paid_attribution: 'Paid attribution on leads',\n  ghl_appointments: 'Bookings from paid leads', utm_tags: 'Ad URL tagging', pixel_capi: 'Pixel / CAPI',\n  landing_pages: 'Landing pages',\n};\nconst PLAYS = {\n  kill: ['⛔', 'Kill'], kill_or_rebuild: ['⛔', 'Kill or rebuild'], fix_tracking: ['🛠', 'Fix tracking'],\n  fix_page: ['🐢', 'Fix landing page'], fix_form: ['📝', 'Fix form / offer'], new_hook: ['🎣', 'New hook'],\n  sharper_hook: ['🎣', 'Sharpen hook'], swap_open: ['🎣', 'Swap first 3 seconds'], fix_promise: ['🎬', 'Deliver the promise sooner'],\n  new_angle: ['💡', 'New angle'], fresh_test: ['🔁', 'Launch fresh test'], add_diversity: ['🎨', 'Add a new concept'],\n  trim_ads: ['✂️', 'Too many ads'], add_ads: ['➕', 'Add ads'], consolidate: ['🧱', 'Consolidate budget'],\n  fix_followup: ['📞', 'Fix lead follow-up'], quality: ['⚠️', 'Fix confirmations'], diagnose: ['🔎', 'Diagnose'],\n  scale: ['🚀', 'Scale'], micro_scale: ['📈', 'Micro-scale'], no_leads: ['📉', 'No leads'],\n  no_bookings: ['📅', 'No bookings'], over_target: ['💸', 'Over target'], cpl_up: ['🔺', 'CPL rising'],\n  spend_stopped: ['⏸', 'Spend stopped'], search_terms: ['🔍', 'Search-term waste'], junk_traffic: ['🗑', 'Junk traffic'],\n  integration: ['🔌', 'Integration'], note: ['ℹ️', 'Note'],\n};\nconst LEGEND = '⛔ kill · 🛠 fix tracking · 🐢 fix page · 📝 fix form · 🎣 new hook · 🎬 promise sooner · 💡 new angle · 🔁 fresh test · 🎨 new concept · ✂️ too many ads · 🧱 consolidate · 📞 follow-up · 🚀 scale';\nconst VERDICT_PLAY = { fix: ['fix_tracking', 'red'], kill: ['kill', 'red'], kill_or_rebuild: ['kill_or_rebuild', 'red'],\n  quality_fail: ['quality', 'yellow'], diagnose: ['diagnose', 'yellow'], scale: ['scale', 'green'], micro_scale: ['micro_scale', 'green'] };\nconst KIND_PLAY = [['landing_page_broken', 'fix_page'], ['missing_utm', 'fix_tracking'], ['signal_gap', 'fix_tracking'],\n  ['google_junk_traffic', 'junk_traffic'], ['google_unmanaged_terms', 'search_terms'],\n  ['cpba_unprofitable', 'over_target'], ['no_appointments', 'no_bookings'], ['spend_stopped', 'spend_stopped']];\nconst RANK = { red: 0, yellow: 1, green: 2, grey: 3, info: 4 };\nconst DOT = { red: '🔴', yellow: '🟡', green: '🟢', grey: '⚪' };\nconst STATUS_LABEL = { red: 'Needs action', yellow: 'Watch', green: 'On target', grey: 'Not graded' };\nconst NO_LEADS_MIN_SPEND = 50.0, CPL_UP = 0.30, CPL_MIN_LEADS = 3, SLACK_ISSUES_PER_CLIENT = 5;\n\n// Python formatting\nconst rhe = (x) => { const f = Math.floor(x); const d = x - f; return d > 0.5 ? f + 1 : d < 0.5 ? f : (f % 2 === 0 ? f : f + 1); };\nconst grp = (v, d) => Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });\nconst _f = (v) => (v === null || v === undefined ? 0 : Number(v));\nconst _money = (v) => {\n  if (v === null || v === undefined) return '—';\n  if (v >= 10000) return '$' + grp(v / 1000, 1) + 'k';\n  return v >= 100 ? '$' + grp(v, 0) : '$' + grp(v, 2);\n};\nconst _n = (v) => { v = _f(v); return Math.abs(v - rhe(v)) < 0.05 ? v.toFixed(0) : v.toFixed(1); };\nconst _pct0 = (x) => rhe(x * 100) + '%';\nconst _delta = (now, before) => { if (before <= 0) return null; const p = rhe((now - before) / before * 100); return Math.abs(p) >= 10 ? p : null; };\nconst _mdy = (iso) => { const [y, m, d] = iso.split('-').map(Number); return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][m - 1] + ' ' + d; };\nconst _lstrip = (s) => s.replace(/^[ :—-]+/, '');\n\nconst _human = (s) => {\n  s = s || '';\n  s = s.replace(/Gate [ABC]:\\s*/g, '');\n  s = s.split('CPAₛ').join('cost per booked').split('Tₛ').join('target').split('T꜀').join('confirmed target');\n  s = s.split('scheduled').join('booked').split('two-window: ').join('');\n  s = s.replace(/(\\d+(?:\\.\\d+)?)×\\s?target/g, '$1× target');\n  s = s.includes('0 booked after')\n    ? s.split('0 booked after').join('0 booked after spending').split('× target').join('× the target')\n    : s.split('×target').join('× target');\n  s = s.split('≤').join('at or under ').split('in 7d and 14d').join('in both 7 and 14 days');\n  s = s.replace(/\\s{2,}/g, ' ').split('near target: ').join('');\n  return s.trim();\n};\nconst _firstSentence = (s, n = 110) => {\n  s = (s || '').split(';')[0].split('. ')[0].trim().replace(/\\.+$/, '');\n  return s.length <= n ? s : s.slice(0, n - 1).replace(/\\s+$/, '') + '…';\n};\nconst _issue = (play, sev, text, campaign = null, nextStep = null) => {\n  const [icon, label] = PLAYS[play] || PLAYS.note;\n  text = text.trim();\n  const words = label.split(' ');\n  for (const prefix of [label, words[0] + ' ' + (label.includes(' ') ? words[1] : '')]) {\n    const p = prefix.trim();\n    if (p && text.toLowerCase().startsWith(p.toLowerCase())) {\n      const rest = _lstrip(text.slice(p.length));\n      text = rest ? rest[0].toUpperCase() + rest.slice(1) : text;\n      break;\n    }\n  }\n  return { play, icon, label, sev, campaign, text: text.trim().replace(/\\.+$/, ''), next: nextStep ? _firstSentence(nextStep) : null };\n};\nconst _tracks = (c) => c.booking_system === 'sheet' || (c.booking_system === 'ghl' && !!c.ghl_location_id);\nconst _layerPlay = (layer) => {\n  const l = (layer || '').toLowerCase();\n  if (l.includes('hook')) return 'new_hook';\n  if (l.includes('ctr') || l.includes('angle')) return 'new_angle';\n  if (l.includes('landing page') || l.includes('page /')) return 'fix_page';\n  if (l.includes('form')) return 'fix_form';\n  if (l.includes('lead quality') || l.includes('speed')) return 'fix_followup';\n  return 'diagnose';\n};\nconst _campaignOf = (f, adCampaigns) => {\n  if (f.campaign) return f.campaign;\n  if (f.entity_type === 'campaign') return f.entity_name ?? null;\n  if (f.entity_type === 'ad') return adCampaigns[String(f.entity_id)] ?? null;\n  return null;\n};\nconst _stripCampaign = (msg, campaign) => {\n  if (!campaign) return msg;\n  msg = msg.split(' in ' + campaign).join('');\n  if (msg.startsWith(campaign)) msg = _lstrip(msg.slice(campaign.length).replace(/^\\s*\\([^)]*\\)/, ''));\n  return msg;\n};\n\nconst _alertIssues = (c, dry) => {\n  const out = [];\n  const spend3 = _f(c.spend_3), leads3 = _f(c.leads_3);\n  if (spend3 >= NO_LEADS_MIN_SPEND && leads3 === 0) {\n    const since = c.last_lead ? 'last lead ' + _mdy(c.last_lead) : 'none in 60 days';\n    out.push(_issue('no_leads', 'red', 'No leads in the last 3 days on ' + _money(spend3) + ' (' + since + ')', null,\n      'Check delivery, the form and the creative today'));\n  } else {\n    for (const d of dry.slice(0, 4)) {\n      out.push(_issue('no_leads', 'yellow', 'No leads in 3 days on ' + _money(_f(d.spend_3)) + ' (' + d.platform + ')', d.name));\n    }\n  }\n  const l7 = _f(c.leads_7), lp = _f(c.leads_prev7);\n  if (l7 >= CPL_MIN_LEADS && lp >= CPL_MIN_LEADS) {\n    const cpl7 = _f(c.spend_7) / l7, cplp = _f(c.spend_prev7) / lp;\n    if (cplp && (cpl7 - cplp) / cplp >= CPL_UP) {\n      out.push(_issue('cpl_up', 'yellow', 'CPL up ' + _pct0((cpl7 - cplp) / cplp) + ' week over week, ' + _money(cplp) + ' → ' + _money(cpl7), null,\n        'Diagnostic only — bookings decide; check the plays below'));\n    }\n  }\n  if (_tracks(c) && _f(c.booked_7) === 0 && _f(c.booked_prev7) >= 2) {\n    out.push(_issue('no_bookings', 'red', 'Bookings stopped: 0 this week vs ' + _n(c.booked_prev7) + ' last week', null,\n      'Check GHL stages and setter follow-up'));\n  }\n  return out;\n};\n\nconst _briefIssues = (brief, adCampaigns) => {\n  const out = [];\n  if (!brief) return out;\n  const findings = brief.findings || [];\n  for (const f of findings) {\n    if (f.kind === 'sop_verdict' && VERDICT_PLAY[f.verdict]) {\n      let [play, sev] = VERDICT_PLAY[f.verdict];\n      if (play === 'diagnose') play = _layerPlay(f.layer);\n      const d = f.decision || {};\n      let text = _human(f.gate);\n      if (f.proposed_value) text = f.proposed_value + ' — ' + text;\n      if (f.layer && sev !== 'green') text += '; ' + _human(f.layer.split(':')[0]);\n      out.push(_issue(play, sev, text, f.entity_name ?? null, d.next_step ?? null));\n    }\n  }\n  for (const f of findings) {\n    if (f.kind === 'creative_signal' && (f.severity === 'yellow' || f.severity === 'info')) {\n      const camp = f.entity_type !== 'campaign' ? _campaignOf(f, adCampaigns) : (f.entity_name ?? null);\n      out.push({ ..._issue(f.play, f.severity, f.text || f.message, camp, f.next_step ?? null),\n        where: f.entity_type === 'ad' || f.entity_type === 'adset' ? (f.entity_name ?? null) : null,\n        where_type: f.entity_type ?? null, advice: true });\n    }\n  }\n  for (const [kind, play] of KIND_PLAY) {\n    const seen = new Set();\n    for (const f of findings) {\n      if (f.kind !== kind || (f.severity !== 'red' && f.severity !== 'yellow')) continue;\n      const camp = _campaignOf(f, adCampaigns);\n      if (seen.has(camp) || seen.size >= 3) continue;\n      seen.add(camp);\n      out.push(_issue(play, f.severity, _stripCampaign(f.message, camp).slice(0, 220), camp));\n      if (camp === null) break;\n    }\n  }\n  return out;\n};\n\n// data = TODAY_SQL result; y = ISO date string\nconst buildCards = (data, y) => {\n  const base = DASHBOARD_URL.replace(/\\/+$/, '');\n  const briefs = {};\n  for (const b of data.briefs) briefs[b.slug] = b;\n  const dry = {};\n  for (const r of data.dry) (dry[r.client_id] ||= []).push(r);\n  const reds = {};\n  for (const r of data.health) (reds[r.slug] ||= new Set()).add(INTEGRATION_LABELS[r.check_key] || r.check_key.split('_').join(' '));\n\n  const cards = [];\n  for (const c of data.clients) {\n    const brief = briefs[c.slug] || null;\n    const tracks = _tracks(c);\n    const b7 = _f(c.booked_7), spend7 = _f(c.spend_7), leads7 = _f(c.leads_7);\n    const cpba7 = b7 ? spend7 / b7 : null;\n    const bt = ((brief || {}).platforms || {}).totals || {};\n    const ts = _f(c.target_cpba) || _f(bt.expected_cpba_green) || _f(bt.cpba_max) || null;\n\n    let status = 'grey';\n    const first = [];\n    if (tracks && ts) {\n      if (b7 >= 3 && cpba7 !== null) {\n        status = cpba7 <= ts ? 'green' : cpba7 <= ts * 1.3 ? 'yellow' : 'red';\n        if (status !== 'green') first.push(_issue('over_target', status, 'Cost per booked ' + _money(cpba7) + ' vs ' + _money(ts) + ' target (' + (cpba7 / ts).toFixed(1) + '×) on ' + _n(b7) + ' bookings'));\n      } else if (b7 > 0 && cpba7 !== null) {\n        status = cpba7 <= ts ? 'green' : 'yellow';\n        if (status === 'yellow') first.push(_issue('over_target', 'yellow', 'Cost per booked ' + _money(cpba7) + ' vs ' + _money(ts) + ' target, only ' + _n(b7) + ' booking' + (b7 !== 1 ? 's' : '') + ' — too thin to act on'));\n      } else if (spend7 >= Math.max(ts, 150)) {\n        status = 'red';\n        first.push(_issue('no_bookings', 'red', 'No bookings this week on ' + _money(spend7) + ' (' + (spend7 / ts).toFixed(1) + '× the ' + _money(ts) + ' target)', null,\n          'Audit lead quality and setter follow-up'));\n      }\n    } else if (tracks && b7 === 0 && spend7 >= 150) {\n      status = 'red';\n      first.push(_issue('no_bookings', 'red', 'No bookings this week on ' + _money(spend7)));\n    }\n\n    const issues = [...first, ..._alertIssues(c, dry[c.id] || []), ..._briefIssues(brief, data.ad_campaigns || {})];\n    if (reds[c.slug]) issues.push(_issue('integration', 'yellow', [...reds[c.slug]].sort().join(', ') + ' not working — see the Integrations page'));\n    if (!tracks) issues.push(_issue('note', 'info', 'Bookings not tracked — no GHL location or booking sheet linked'));\n    for (const i of issues) {\n      if ((i.sev === 'red' || i.sev === 'yellow') && i.play !== 'note' && i.play !== 'integration' && !i.advice && RANK[i.sev] < RANK[status]) status = i.sev;\n    }\n    issues.sort((a, b) => RANK[a.sev] - RANK[b.sev] || (a.campaign ? 1 : 0) - (b.campaign ? 1 : 0));\n\n    cards.push({\n      slug: c.slug, name: c.name, status, url: base + '/clients/' + c.slug,\n      tracks_bookings: tracks, target_cpba: ts,\n      leads: { y: _f(c.leads_1), d7: leads7, d30: _f(c.leads_30), delta7: _delta(leads7, _f(c.leads_prev7)) },\n      booked: tracks ? { y: _f(c.booked_1), d7: b7, d30: _f(c.booked_30), delta7: _delta(b7, _f(c.booked_prev7)) } : null,\n      spend: { y: _f(c.spend_1), d7: spend7, d30: _f(c.spend_30) },\n      cpl7: leads7 ? spend7 / leads7 : null, cpba7,\n      issues, spend30: _f(c.spend_30),\n    });\n  }\n  cards.sort((a, b) => RANK[a.status] - RANK[b.status] || b.spend30 - a.spend30);\n  const counts = {};\n  for (const k of ['red', 'yellow', 'green', 'grey']) counts[k] = cards.filter((x) => x.status === k).length;\n  const tot = (k, w) => cards.reduce((s, x) => s + (x[k] ? _f(x[k][w]) : 0), 0);\n  const totals = {};\n  for (const k of ['spend', 'leads', 'booked']) totals[k] = { y: tot(k, 'y'), d7: tot(k, 'd7'), d30: tot(k, 'd30') };\n  const top = [];\n  for (const x of cards) for (const i of x.issues) {\n    if ((i.sev === 'red' || i.sev === 'yellow') && !['note', 'integration', 'cpl_up'].includes(i.play)) top.push({ ...i, client: x.name, slug: x.slug, spend30: x.spend30 });\n  }\n  top.sort((a, b) => RANK[a.sev] - RANK[b.sev] || b.spend30 - a.spend30);\n  const wins = [];\n  for (const x of cards) for (const i of x.issues) if (i.play === 'scale' || i.play === 'micro_scale') wins.push({ ...i, client: x.name, slug: x.slug });\n  const bd = data.briefs.find((b) => b.brief_date);\n  return { date: y, brief_date: bd ? bd.brief_date : null, counts, totals,\n    top_actions: top.slice(0, 8), wins, clients: cards, legend: LEGEND, dashboard_url: base };\n};\n\n// ---- Slack rendering (render_slack)\nconst _playLine = (i, indent) => {\n  const sub = i.where && i.where_type === 'ad' ? i.where + ': ' : '';\n  let line = indent + i.icon + ' *' + i.label + '* — ' + sub + i.text;\n  if (i.next && i.play !== 'over_target') line += '\\n' + indent + '      _→ ' + i.next + '_';\n  return line;\n};\nconst _groupedLines = (issues) => {\n  const lines = issues.filter((i) => !i.campaign).map((i) => _playLine(i, ''));\n  const order = [];\n  const by = {};\n  for (const i of issues) if (i.campaign) { if (!by[i.campaign]) { order.push(i.campaign); by[i.campaign] = []; } by[i.campaign].push(i); }\n  for (const camp of order) { lines.push('*' + camp + '*'); for (const i of by[camp]) lines.push(_playLine(i, '    ')); }\n  return lines;\n};\nconst _arrow = (d) => (d === null || d === undefined ? '' : d > 0 ? ' ▲' + d + '%' : ' ▼' + Math.abs(d) + '%');\nconst _clientBlocks = (card, base) => {\n  const b = card.booked;\n  const fields = [\n    { type: 'mrkdwn', text: '*Leads*  _yday · 7d · 30d_\\n' + _n(card.leads.y) + ' · ' + _n(card.leads.d7) + _arrow(card.leads.delta7) + ' · ' + _n(card.leads.d30) },\n    { type: 'mrkdwn', text: b ? '*Booked*  _yday · 7d · 30d_\\n' + _n(b.y) + ' · ' + _n(b.d7) + _arrow(b.delta7) + ' · ' + _n(b.d30) : '*Booked*\\n_not tracked_' },\n    { type: 'mrkdwn', text: '*7-day spend · CPL*\\n' + _money(card.spend.d7) + ' · ' + _money(card.cpl7) },\n    { type: 'mrkdwn', text: '*Cost per booked*  _7d_\\n' + _money(card.cpba7) + (card.target_cpba && card.cpba7 ? '  vs ' + _money(card.target_cpba) + ' target' : '') },\n  ];\n  const visible = card.issues.filter((i) => ['red', 'yellow', 'green'].includes(i.sev));\n  const shown = visible.slice(0, SLACK_ISSUES_PER_CLIENT);\n  const hidden = visible.length - shown.length;\n  const blocks = [{ type: 'section', text: { type: 'mrkdwn', text: DOT[card.status] + '  *<' + card.url + '|' + card.name + '>*' }, fields }];\n  if (shown.length) blocks.push({ type: 'section', text: { type: 'mrkdwn', text: _groupedLines(shown).join('\\n').slice(0, 2900) } });\n  else blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: '✅ Nothing to change' }] });\n  if (hidden > 0) blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: '+' + hidden + ' more · <' + card.url + '|open client> · <' + base + '/today|today>' }] });\n  blocks.push({ type: 'divider' });\n  return blocks;\n};\nconst renderSlack = (data) => {\n  const base = data.dashboard_url;\n  const [yy, mm, dd] = data.date.split('-').map(Number);\n  const dt = new Date(Date.UTC(yy, mm - 1, dd));\n  const dayName = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'][dt.getUTCDay()];\n  const t = data.totals, cnt = data.counts;\n  const summary = [\n    { type: 'header', text: { type: 'plain_text', text: '📊 Ads daily report · ' + dayName + ', ' + _mdy(data.date) } },\n    { type: 'section', fields: [\n      { type: 'mrkdwn', text: '*🔴 Needs action*\\n' + cnt.red + ' clients' },\n      { type: 'mrkdwn', text: '*🟡 Watch*\\n' + cnt.yellow + ' clients' },\n      { type: 'mrkdwn', text: '*🟢 On target*\\n' + cnt.green + ' clients' },\n      { type: 'mrkdwn', text: '*⚪ Not graded*\\n' + cnt.grey + ' clients' },\n      { type: 'mrkdwn', text: '*Spend*  _yday · 7d · 30d_\\n' + _money(t.spend.y) + ' · ' + _money(t.spend.d7) + ' · ' + _money(t.spend.d30) },\n      { type: 'mrkdwn', text: '*Leads · Booked*  _7d_\\n' + _n(t.leads.d7) + ' leads · ' + _n(t.booked.d7) + ' booked' },\n    ] },\n  ];\n  if (data.top_actions.length) {\n    const lines = data.top_actions.slice(0, 6).map((i, n) => (n + 1) + '. ' + i.icon + ' *' + i.client + '*' + (i.campaign ? ' · ' + i.campaign : '') + ' — *' + i.label + '*: ' + _firstSentence(i.text, 90));\n    summary.push({ type: 'section', text: { type: 'mrkdwn', text: '*Top actions today*\\n' + lines.join('\\n') } });\n  }\n  if (data.wins.length) {\n    summary.push({ type: 'section', text: { type: 'mrkdwn', text: '*Ready to scale*\\n' + data.wins.slice(0, 4).map((i) => i.icon + ' *' + i.client + '* · ' + i.campaign + ' — ' + _firstSentence(i.text, 70)).join('\\n') } });\n  }\n  summary.push({ type: 'context', elements: [{ type: 'mrkdwn', text: LEGEND + '\\nKills and scales wait in the Actions queue — nothing changes until someone approves. <' + base + '/today|Open today\\'s board>' }] });\n  const messages = [summary];\n  let current = [];\n  let group = null;\n  for (const card of data.clients) {\n    const blocks = _clientBlocks(card, base);\n    let head = [];\n    if (card.status !== group) { group = card.status; head = [{ type: 'header', text: { type: 'plain_text', text: DOT[group] + ' ' + STATUS_LABEL[group] + ' (' + cnt[group] + ')' } }]; }\n    if (current.length && current.length + head.length + blocks.length > 48) { messages.push(current); current = []; }\n    current.push(...head, ...blocks);\n  }\n  if (current.length) messages.push(current);\n  return messages;\n};\nconst req = $('Webhook').first().json;\nconst user = $('Build user').first().json.user;\nconst input = $('Validate').first().json.value;\nconst data = $json.data;\n\nconst d = buildCards(data, input.y);\nconst card = d.clients.find((c) => c.slug === req.params.slug) || null;\nreturn { body: { date: d.date, brief_date: d.brief_date, legend: d.legend, card } };\n})();\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "9ce17c58-c5a5-4a95-abba-52b256d5d1a8",
+      "position": [
+        2860,
+        0
+      ],
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.body === undefined ? '' : JSON.stringify($json.body) }}",
+        "options": {
+          "responseCode": "={{ $json.status ?? 200 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read token": {
+      "main": [
+        [
+          {
+            "node": "Has token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has token?": {
+      "main": [
+        [
+          {
+            "node": "Verify JWT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify JWT": {
+      "main": [
+        [
+          {
+            "node": "Load profile",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Token error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load profile": {
+      "main": [
+        [
+          {
+            "node": "Build user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build user": {
+      "main": [
+        [
+          {
+            "node": "Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token error": {
+      "main": [
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorized?": {
+      "main": [
+        [
+          {
+            "node": "Validate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query": {
+      "main": [
+        [
+          {
+            "node": "Shape",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB error": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  }
+}

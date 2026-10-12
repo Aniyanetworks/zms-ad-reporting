@@ -1,0 +1,511 @@
+{
+  "name": "ZMS API · GET /api/clients/{slug}/creative-health",
+  "nodes": [
+    {
+      "id": "493f609b-945c-4f9c-a2b1-09ebdc5c592f",
+      "position": [
+        0,
+        0
+      ],
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "zms",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "api/clients/:slug/creative-health",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "1ad5a9bb-5d2d-4c15-acda-4d43fa504338",
+      "position": [
+        220,
+        0
+      ],
+      "name": "Read token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const m = /^Bearer\\s+(.+)$/i.exec(($json.headers || {}).authorization || '');\nreturn [{ json: m ? { token: m[1].trim() } : { error: { status: 401, detail: 'Missing token' } } }];"
+      }
+    },
+    {
+      "id": "1ee139f6-c287-4b3c-a8ec-a39dff938e27",
+      "position": [
+        440,
+        0
+      ],
+      "name": "Has token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1fdb5ee6-9b3c-4627-a438-e557c9358805",
+              "leftValue": "={{ !$json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8c62f83d-6dc4-49e1-a65c-e9ed9cd41aa3",
+      "position": [
+        660,
+        0
+      ],
+      "name": "Verify JWT",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "jwtAuth": {
+          "id": "VO3CX2JfTZ8fKIez",
+          "name": "ZMS Supabase JWT (public key)"
+        }
+      },
+      "parameters": {
+        "operation": "verify",
+        "token": "={{ $json.token }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "5da91224-724c-434a-a69e-b7a7f9e20721",
+      "position": [
+        880,
+        200
+      ],
+      "name": "Token error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const e = $json.error;\nconst msg = (e && (e.message || e.description)) || (typeof e === 'string' ? e : 'invalid token');\nreturn [{ json: { error: { status: 401, detail: `Invalid token: ${msg}` } } }];"
+      }
+    },
+    {
+      "id": "e66039f2-a580-42cb-a067-09dabce00908",
+      "position": [
+        1100,
+        0
+      ],
+      "name": "Load profile",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "credentials": {
+        "postgres": {
+          "id": "UmpkC3NkKcg32kNA",
+          "name": "ZMS Supabase Postgres"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select coalesce((select to_jsonb(p) from (select role, full_name from profiles where id = $1::uuid) p), '{}'::jsonb) as profile",
+        "options": {
+          "queryReplacement": "={{ [($json.payload ?? $json).sub] }}"
+        }
+      }
+    },
+    {
+      "id": "e4dde455-d0bb-4c35-a938-af462adca921",
+      "position": [
+        1320,
+        0
+      ],
+      "name": "Build user",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const v = $('Verify JWT').first().json;\nconst claims = v.payload ?? v;\nconst aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];\nif (!aud.includes('authenticated')) return [{ json: { error: { status: 401, detail: 'Invalid token: Invalid audience' } } }];\nconst p = $json.profile || {};\nconst role = [\"admin\",\"media_buyer\",\"viewer\"].includes(p.role) ? p.role : 'viewer';\nconst user = { id: claims.sub, email: claims.email ?? null, role, full_name: p.full_name ?? null };\nreturn [{ json: { user } }];"
+      }
+    },
+    {
+      "id": "3a3ea289-ecce-48b3-af1c-defe1a0eb91c",
+      "position": [
+        1540,
+        0
+      ],
+      "name": "Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1fdb5ee6-9b3c-4627-a438-e557c9358805",
+              "leftValue": "={{ !$json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "464bab24-752a-4a3c-a00f-f3d2c2edf138",
+      "position": [
+        1760,
+        300
+      ],
+      "name": "Respond error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ { detail: $json.error.detail } === undefined ? '' : JSON.stringify({ detail: $json.error.detail }) }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "59e70893-fc9c-4314-ab5f-51440c52140f",
+      "position": [
+        1760,
+        0
+      ],
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const r = (() => {\n// Public dashboard URL (links in cards / Slack). Backend default: settings.dashboard_url.\nconst DASHBOARD_URL = 'https://zms-ad-reporting.netlify.app';\n// Dates are computed in the backend's timezone (TZ=America/Los_Angeles); ISO yyyy-mm-dd strings.\nconst todayLA = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());\nconst addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };\nconst yesterdayLA = () => addDays(todayLA(), -1);\n\n// Python's round(x, n) for display values (half-to-even on exact ties is not reproduced).\nconst pyRound = (x, n = 0) => (x === null || x === undefined ? x : Number(Number(x).toFixed(n)));\nconst num = (x) => (x === null || x === undefined ? 0 : Number(x));\nconst safeDiv = (a, b) => (b ? pyRound(a / b, 2) : null);\n\n// economics.py\nconst maxCpba = (job, close, margin, share) => {\n  const j = Number(job || 0);\n  if (!(j > 0)) return null;\n  return pyRound(j * Number(close || 0) * Number(margin || 0) * Number(share || 0), 2);\n};\nconst cpbaColor = (cpba, ceiling) => {\n  if (cpba === null || cpba === undefined || !ceiling) return null;\n  return cpba <= ceiling * 0.75 ? 'green' : cpba <= ceiling ? 'yellow' : 'red';\n};\n\n// targets.py — targets: array of service_targets rows\nconst indexTargets = (rows) => {\n  const m = new Map();\n  for (const r of rows || []) m.set(r.service + '|' + r.platform, r);\n  return m;\n};\nconst resolveTarget = (tg, service, platform) => {\n  if (!service) return null;\n  return tg.get(service + '|' + (platform || 'all')) || tg.get(service + '|all') || null;\n};\n// overview.py _expected: lead-weighted (else spend-weighted) CPL green/red for service rows\nconst expectedCpl = (rows, tg, clientGreen, clientRed) => {\n  let wg = 0, wr = 0, ws = 0;\n  for (const r of rows) {\n    const t = resolveTarget(tg, r.service, r.platform);\n    const g = t && t.cpl_green !== null && t.cpl_green !== undefined ? Number(t.cpl_green) : clientGreen;\n    const rd = t && t.cpl_red !== null && t.cpl_red !== undefined ? Number(t.cpl_red) : t ? g * 1.5 : clientRed;\n    const w = num(r.leads) || num(r.spend) * 0.01;\n    if (w <= 0) continue;\n    wg += g * w; wr += rd * w; ws += w;\n  }\n  return ws === 0 ? null : [pyRound(wg / ws, 2), pyRound(wr / ws, 2)];\n};\n\n// Rejections from a Validate step. fail() for plain errors, invalid() for FastAPI-style 422s.\nconst fail = (status, detail) => ({ __fail: { status, detail } });\nconst isDate = (s) => typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));\nconst invalid = (loc, msg, type = 'value_error') => fail(422, [{ type, loc, msg }]);\n\n// Minimal pydantic: spec = { field: { type: 'str'|'num'|'bool', required?, nullable?, min?, max?,\n// pattern?, default?, ge?, le?, int? } }. Unknown keys are rejected (extra=\"forbid\") unless allowExtra; strings are capped at 500 chars\n// (str_max_length). partial=true validates only the keys present (exclude_unset). Returns\n// { value } or a fail().\nconst checkBody = (spec, body, partial = false, allowExtra = false) => {\n  if (body === null || typeof body !== 'object' || Array.isArray(body)) {\n    return invalid(['body'], 'Input should be a valid dictionary', 'dict_type');\n  }\n  const errors = [];\n  const out = {};\n  for (const k of Object.keys(body)) {\n    if (!allowExtra && !(k in spec)) errors.push({ type: 'extra_forbidden', loc: ['body', k], msg: 'Extra inputs are not permitted' });\n  }\n  for (const [k, f] of Object.entries(spec)) {\n    const present = Object.prototype.hasOwnProperty.call(body, k);\n    if (!present) {\n      if (f.required && !partial) errors.push({ type: 'missing', loc: ['body', k], msg: 'Field required' });\n      else if (!partial) out[k] = f.default ?? null;\n      continue;\n    }\n    let v = body[k];\n    if (v === null) {\n      if (f.nullable === false) errors.push({ type: f.type + '_type', loc: ['body', k], msg: 'Input should not be None' });\n      out[k] = null;\n      continue;\n    }\n    if (f.type === 'str') {\n      if (typeof v !== 'string') { errors.push({ type: 'string_type', loc: ['body', k], msg: 'Input should be a valid string' }); continue; }\n      const max = Math.min(f.max ?? 500, 500);\n      if (f.min && v.length < f.min) errors.push({ type: 'string_too_short', loc: ['body', k], msg: 'String should have at least ' + f.min + ' character' + (f.min === 1 ? '' : 's') });\n      if (v.length > max) errors.push({ type: 'string_too_long', loc: ['body', k], msg: 'String should have at most ' + max + ' characters' });\n      if (f.pattern && !new RegExp(f.pattern).test(v)) errors.push({ type: 'string_pattern_mismatch', loc: ['body', k], msg: \"String should match pattern '\" + f.pattern + \"'\" });\n    } else if (f.type === 'num') {\n      if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) v = Number(v);\n      if (typeof v !== 'number' || !Number.isFinite(v)) { errors.push({ type: 'float_parsing', loc: ['body', k], msg: 'Input should be a valid number' }); continue; }\n      if (f.ge !== undefined && v < f.ge) errors.push({ type: 'greater_than_equal', loc: ['body', k], msg: 'Input should be greater than or equal to ' + f.ge });\n      if (f.le !== undefined && v > f.le) errors.push({ type: 'less_than_equal', loc: ['body', k], msg: 'Input should be less than or equal to ' + f.le });\n      if (f.int && !Number.isInteger(v)) errors.push({ type: 'int_from_float', loc: ['body', k], msg: 'Input should be a valid integer, got a number with a fractional part' });\n    } else if (f.type === 'bool') {\n      if (typeof v !== 'boolean') { errors.push({ type: 'bool_parsing', loc: ['body', k], msg: 'Input should be a valid boolean' }); continue; }\n    }\n    out[k] = v;\n  }\n  return errors.length ? fail(422, errors) : { value: out };\n};\n\n// audit_log context from the webhook request (core/audit.py client_ip + user agent)\nconst auditCtx = (req, user) => {\n  const h = req.headers || {};\n  let ip = h['cf-connecting-ip'] || h['x-real-ip'] || (h['x-forwarded-for'] || '').split(',')[0].trim() || null;\n  if (ip && !/^[0-9a-fA-F:.]{2,45}$/.test(ip)) ip = null; // only values the ::inet cast accepts\n  const ua = h['user-agent'] ? String(h['user-agent']).slice(0, 500) : null;\n  return { actor_id: user ? user.id : null, actor_email: user ? user.email : null, ip, user_agent: ua };\n};\nconst CD = { HOOK_LOW: 0.20, HOOK_BORDER: 0.25, HOLD_LOW: 0.20, HOLD_HIGH: 0.40, VIDEO_SHARE: 0.05, MIN_IMPS: 1500,\n  CTR_LOW: 0.01, CPC_WARN: 4.0, FT_MIN_CLICKS: 40, FT_ABS_LOW: 0.05, LPV_MIN_CLICKS: 30, LPV_LOW: 0.60,\n  PAGE_CVR_LOW: 0.03, FATIGUE_RISE: 0.20, FATIGUE_MIN_SPEND: 100.0, LEAD_DEATH_DROP: 0.40, ADS_PER_BUDGET: 10.0, MAX_SIGNALS: 8 };\nconst CD_PLAY = { new_hook: 'New hook', sharper_hook: 'Sharpen hook', fix_promise: 'Deliver the promise sooner',\n  swap_open: 'Swap the first 3 seconds', new_angle: 'New angle', fix_form: 'Fix form / offer',\n  fix_page: 'Fix landing page', fresh_test: 'Launch fresh test', trim_ads: 'Too many ads',\n  add_ads: 'Add ads', consolidate: 'Consolidate budget', add_diversity: 'Add a new concept' };\nconst _cdf = (v) => (v === null || v === undefined ? 0 : Number(v));\nconst _cdgrp = (v, d) => Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });\nconst _m = (v) => (v === null || v === undefined ? '—' : v >= 100 ? '$' + _cdgrp(v, 0) : '$' + _cdgrp(v, 2));\nconst _pct = (v, nd = 0) => (v === null || v === undefined ? '—' : (v * 100).toFixed(nd) + '%');\nconst _norm = (s, n) => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim().slice(0, n);\nconst _isForm = (link) => !link || link.includes('fb.me') || link.includes('facebook.com');\nconst _r4 = (v) => (typeof v === 'number' ? Number(v.toFixed(4)) : v);\nconst _median = (xs) => { const s = [...xs].sort((a, b) => a - b); const n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };\nconst _signal = (play, sev, entityType, entityId, entityName, campaign, text, nextStep, spend, evidence) => ({\n  kind: 'creative_signal', play, label: CD_PLAY[play], severity: sev,\n  entity_type: entityType, entity_id: entityId, entity_name: entityName,\n  campaign, message: entityName + ': ' + CD_PLAY[play].toLowerCase() + ' — ' + text,\n  text, next_step: nextStep, spend: pyRound(spend, 2), evidence, action: null });\nconst _struggling = (bookings, adsetName, leadsCur, leadsPrev) => {\n  const b = bookings[adsetName || ''];\n  if (b && (b[0] || b[1])) return b[0] === 0 || b[0] < b[1];\n  return leadsCur === 0 || (leadsPrev > 0 && leadsCur < 0.7 * leadsPrev);\n};\nconst _dayDiff = (a, b) => Math.round((Date.parse(a + 'T00:00:00Z') - Date.parse(b + 'T00:00:00Z')) / 86400000);\n\n// data = CREATIVE_SQL result, end = ISO date\nconst analyzeCreative = (data, end) => {\n  const names = {};\n  for (const r of data.names) names[r.kind + '|' + r.id] = r.name;\n  const ads = new Map();\n  for (const r of data.ads) {\n    if (!ads.has(r.ad_id)) ads.set(r.ad_id, { ad_id: r.ad_id, adset_id: r.adset_id, campaign_id: r.campaign_id, ad_name: r.ad_name, cur: {}, prev: {} });\n    const a = ads.get(r.ad_id);\n    const vals = {};\n    for (const k of ['spend', 'imps', 'clicks', 'leads', 'reach', 'ulc', 'uoc', 'v3', 'thru', 'lpv']) vals[k] = _cdf(r[k]);\n    a[r.cur ? 'cur' : 'prev'] = vals;\n    if (r.cur) a.ad_name = r.ad_name || a.ad_name;\n  }\n  if (!ads.size) return { ads: [], signals: [], ft_median: null };\n  const creatives = {};\n  for (const r of data.creatives) creatives[r.ad_id] = r;\n  const bookings = {};\n  for (const r of data.bookings) bookings[r.adset_name] = [_cdf(r.cur), _cdf(r.prev)];\n  const budgets = {};\n  for (const r of data.budgets) budgets[r.entity_type + '|' + r.entity_id] = r;\n  const g = (o, k) => o[k] || 0;\n  let signals = [];\n\n  for (const a of ads.values()) {\n    const c = a.cur, pv = a.prev;\n    const cr = creatives[a.ad_id] || {};\n    const form = _isForm(cr.link_url);\n    a.campaign = names['campaign|' + a.campaign_id] ?? null;\n    a.adset = names['adset|' + a.adset_id] ?? null;\n    a.format = cr.video_id || (c.imps && g(c, 'v3') >= CD.VIDEO_SHARE * c.imps) ? 'video' : 'image';\n    a.destination = form ? 'instant form' : 'website';\n    const imps = g(c, 'imps');\n    const unique = (!form && g(c, 'uoc') >= 0.5 * g(c, 'ulc') && g(c, 'uoc') > 0 ? g(c, 'uoc') : g(c, 'ulc')) || g(c, 'clicks');\n    a.m = {\n      spend: g(c, 'spend'), imps, leads: g(c, 'leads'), unique_clicks: unique,\n      ctr: imps ? unique / imps : null,\n      cpc: unique ? g(c, 'spend') / unique : null,\n      cpl: c.leads ? g(c, 'spend') / c.leads : null,\n      hook: imps && c.v3 ? g(c, 'v3') / imps : null,\n      hold: c.v3 ? g(c, 'thru') / c.v3 : null,\n      form_through: form && c.ulc ? g(c, 'leads') / c.ulc : null,\n      lpv_ratio: !form && unique ? g(c, 'lpv') / unique : null,\n      page_cvr: !form && c.lpv ? g(c, 'leads') / c.lpv : null,\n      freq: c.reach ? imps / c.reach : null,\n      freq_prev: pv.reach ? g(pv, 'imps') / pv.reach : null,\n      cpmr: c.reach ? g(c, 'spend') * 1000 / c.reach : null,\n      cpmr_prev: pv.reach ? g(pv, 'spend') * 1000 / pv.reach : null,\n      cpl_prev: pv.leads ? g(pv, 'spend') / pv.leads : null,\n      spend_prev: g(pv, 'spend'), leads_prev: g(pv, 'leads'),\n    };\n  }\n\n  const live = [...ads.values()].filter((a) => a.m.spend > 0);\n  const fts = live.filter((a) => a.m.form_through !== null && g(a.cur, 'ulc') >= CD.FT_MIN_CLICKS).map((a) => a.m.form_through);\n  const ftMedian = fts.length >= 3 ? _median(fts) : null;\n\n  for (const a of live) {\n    const m = a.m, name = a.ad_name || a.ad_id, camp = a.campaign;\n    const adSignals = [];\n    const ev = {};\n    for (const [k, v] of Object.entries(m)) ev[k] = _r4(v);\n    if (a.format === 'video' && m.imps >= CD.MIN_IMPS && m.hook !== null && m.hook >= CD.VIDEO_SHARE) {\n      const hook = m.hook, hold = m.hold;\n      if (hook < CD.HOOK_LOW && hold !== null && hold >= CD.HOLD_HIGH) {\n        adSignals.push(_signal('swap_open', 'yellow', 'ad', a.ad_id, name, camp,\n          'hook ' + _pct(hook) + ' (<20%) but hold ' + _pct(hold) + ' — the right people stay, too few are stopped',\n          'Re-cut only the first 3 seconds (new opening shot / on-screen text); keep the rest of the video', m.spend, ev));\n      } else if (hook < CD.HOOK_LOW) {\n        adSignals.push(_signal('new_hook', 'yellow', 'ad', a.ad_id, name, camp,\n          'hook ' + _pct(hook) + \" (<20%) — the first 3 seconds aren't stopping the scroll\",\n          'Test 2–3 new openings on the same video in a fresh test', m.spend, ev));\n      } else if (hook < CD.HOOK_BORDER) {\n        adSignals.push(_signal('sharper_hook', 'info', 'ad', a.ad_id, name, camp,\n          'hook ' + _pct(hook) + ' — borderline (20–25%)', 'Test a sharper opening line / visual', m.spend, ev));\n      } else if (hold !== null && hold < CD.HOLD_LOW && g(a.cur, 'v3') >= 300) {\n        adSignals.push(_signal('fix_promise', 'yellow', 'ad', a.ad_id, name, camp,\n          'hook ' + _pct(hook) + ' is good but hold ' + _pct(hold) + ' (<20%) — attention without payoff',\n          'Deliver the offer / result in the first 5–7 seconds after the hook', m.spend, ev));\n      }\n    }\n    if (m.imps >= 2000 && m.ctr !== null && m.ctr < CD.CTR_LOW) {\n      const cpc = m.cpc ? ', ' + _m(m.cpc) + ' per unique click' : '';\n      const weak = _struggling(bookings, a.adset, m.leads, m.leads_prev);\n      adSignals.push(_signal('new_angle', weak ? 'yellow' : 'info', 'ad', a.ad_id, name, camp,\n        'unique CTR ' + _pct(m.ctr, 2) + ' (<1%)' + cpc + \" — the message isn't landing\" + (weak ? '' : '; the ad set is still booking, so keep it running'),\n        weak ? 'Test a different angle / promise, not a copy tweak' : 'Test a new angle alongside it in a fresh test', m.spend, ev));\n    } else if (m.cpc !== null && m.cpc > CD.CPC_WARN && m.unique_clicks >= 30) {\n      adSignals.push(_signal('new_angle', 'info', 'ad', a.ad_id, name, camp,\n        _m(m.cpc) + ' per unique click (above the $3–4 range)', 'Watch; test a stronger angle if bookings are weak', m.spend, ev));\n    }\n    if (m.form_through !== null && g(a.cur, 'ulc') >= CD.FT_MIN_CLICKS && (m.ctr || 0) >= CD.CTR_LOW) {\n      const lowRel = ftMedian !== null && m.form_through < 0.5 * ftMedian;\n      if (m.form_through < CD.FT_ABS_LOW || lowRel) {\n        const rel = ftMedian ? ' vs ' + _pct(ftMedian) + \" across this client's ads\" : '';\n        adSignals.push(_signal('fix_form', 'yellow', 'ad', a.ad_id, name, camp,\n          'only ' + _pct(m.form_through) + ' of clickers submit' + rel + \" — CTR is fine, so it's the form or offer\",\n          'Rewrite the greeting screen and offer headline; keep fields and questions minimal until volume returns', m.spend,\n          { ...ev, working_threshold: 'form-through <5% or <half the client median' }));\n      }\n    }\n    if (m.lpv_ratio !== null && m.unique_clicks >= CD.LPV_MIN_CLICKS) {\n      if (m.lpv_ratio < CD.LPV_LOW) {\n        adSignals.push(_signal('fix_page', 'yellow', 'ad', a.ad_id, name, camp,\n          'only ' + _pct(m.lpv_ratio) + ' of clicks load the page — slow page or ad/page mismatch',\n          'Check load time on mobile (<3 s) and that the page headline matches the ad', m.spend,\n          { ...ev, working_threshold: 'landing-page views <60% of unique clicks' }));\n      } else if (m.page_cvr !== null && g(a.cur, 'lpv') >= 30 && m.page_cvr < CD.PAGE_CVR_LOW) {\n        adSignals.push(_signal('fix_page', 'yellow', 'ad', a.ad_id, name, camp,\n          'page loads fine but only ' + _pct(m.page_cvr, 1) + ' of visitors become leads',\n          \"Repair the page's offer, proof and form placement\", m.spend,\n          { ...ev, working_threshold: 'leads <3% of landing-page views' }));\n      }\n    }\n    if (m.spend >= CD.FATIGUE_MIN_SPEND && m.spend_prev >= CD.FATIGUE_MIN_SPEND && m.freq && m.freq_prev && m.cpmr && m.cpmr_prev) {\n      const fUp = m.freq / m.freq_prev - 1;\n      const rUp = m.cpmr / m.cpmr_prev - 1;\n      const worse = (m.cpl === null && m.leads_prev > 0) || (m.cpl && m.cpl_prev && m.cpl > 1.3 * m.cpl_prev);\n      const [bCur, bPrev] = bookings[a.adset || ''] || [0, 0];\n      const holding = bCur > 0 && bCur >= bPrev;\n      if (fUp >= CD.FATIGUE_RISE && rUp >= CD.FATIGUE_RISE && worse && !holding) {\n        adSignals.push(_signal('fresh_test', 'yellow', 'ad', a.ad_id, name, camp,\n          'frequency ' + m.freq_prev.toFixed(1) + '→' + m.freq.toFixed(1) + ' and cost per 1,000 reached ' + _m(m.cpmr_prev) + '→' + _m(m.cpmr) + ' while CPL rose — Meta is stuck in the same audience',\n          \"Launch the replacement as a fresh test (new campaign/ad set); keep this ad running until the replacement proves itself — don't pause it\", m.spend,\n          { ...ev, adset_bookings_cur: bCur, adset_bookings_prev: bPrev }));\n      }\n    }\n    signals.push(...adSignals);\n    a.plays = adSignals.map((s) => s.play);\n  }\n\n  const byAdset = new Map();\n  for (const a of live) { if (!byAdset.has(a.adset_id)) byAdset.set(a.adset_id, []); byAdset.get(a.adset_id).push(a); }\n  const campSpend = {};\n  for (const a of live) campSpend[a.campaign_id] = (campSpend[a.campaign_id] || 0) + a.m.spend;\n  for (const [adsetId, items] of byAdset) {\n    const campId = items[0].campaign_id;\n    const adsetName = items[0].adset || adsetId, camp = items[0].campaign;\n    const spend7 = items.reduce((s, i) => s + i.m.spend, 0);\n    const leads7 = items.reduce((s, i) => s + i.m.leads, 0);\n    const b = budgets['adset|' + adsetId];\n    const cb = budgets['campaign|' + campId];\n    let budget = null, src = null;\n    if (b && _cdf(b.daily_budget)) { budget = _cdf(b.daily_budget); src = 'ad set'; }\n    else if (cb && _cdf(cb.daily_budget) && campSpend[campId]) { budget = _cdf(cb.daily_budget) * spend7 / campSpend[campId]; src = 'share of CBO'; }\n    const n = items.length;\n    const ev = { ads: n, daily_budget: budget ? pyRound(budget, 2) : null, budget_source: src, spend_7: pyRound(spend7, 2), leads_7: leads7 };\n    if (budget && n > 5 && n > budget / CD.ADS_PER_BUDGET + 1) {\n      signals.push(_signal('trim_ads', 'yellow', 'adset', adsetId, adsetName, camp,\n        n + ' ads on about ' + _m(budget) + '/day (' + src + ') — about one ad per $10/day; spend is spread too thin for any ad to reach conversion volume',\n        'Keep the 3–5 ads with the most bookings; move new creative into a fresh test', spend7, ev));\n    }\n    const cpl7 = leads7 ? spend7 / leads7 : null;\n    if (spend7 >= 100 && leads7 < 7) {\n      const cantBuy = budget && cpl7 && budget < cpl7;\n      const canBuy = cantBuy ? \"can't buy one lead a day at a \" + _m(cpl7) + ' CPL' : 'under one lead a day';\n      signals.push(_signal('consolidate', leads7 < 3 ? 'yellow' : 'info', 'adset', adsetId, adsetName, camp,\n        leads7.toFixed(0) + ' lead' + (leads7 !== 1 ? 's' : '') + ' this week on ' + _m(spend7) + (budget ? ' (about ' + _m(budget) + '/day)' : '') + ' — ' + canBuy + '; ad sets without 1–2 conversions a day get lost',\n        'Consolidate into one ad set with a budget of at least 2× CPL per day', spend7, ev));\n    }\n    if (n >= 3) {\n      const concepts = new Set(items.map((i) => { const cr = creatives[i.ad_id] || {}; return _norm(cr.title, 40) + '\\u0000' + _norm(cr.body, 80); }));\n      concepts.delete('\\u0000');\n      const formats = [...new Set(items.map((i) => i.format))].sort();\n      const leadsPrev = items.reduce((s, i) => s + i.m.leads_prev, 0);\n      if (concepts.size === 1) {\n        const weak = _struggling(bookings, items[0].adset, leads7, leadsPrev);\n        signals.push(_signal('add_diversity', weak ? 'yellow' : 'info', 'adset', adsetId, adsetName, camp,\n          n + ' ads but one concept (' + formats.join('/') + \") — copy variations of one angle aren't diversity; campaigns built this way die in week 2\",\n          'Add a second angle (different promise or pain point), video first, in a fresh test', spend7, { ...ev, concepts: 1, formats }));\n      }\n    } else if (n < 3 && budget && budget >= 30 && spend7 >= 100) {\n      signals.push(_signal('add_ads', 'info', 'adset', adsetId, adsetName, camp,\n        'only ' + n + ' ad' + (n !== 1 ? 's' : '') + ' on ~' + _m(budget) + '/day', 'Test 3–5 ads per ad set', spend7, ev));\n    }\n  }\n\n  const daily = new Map();\n  for (const r of data.campaign_daily) { if (!daily.has(r.campaign_id)) daily.set(r.campaign_id, []); daily.get(r.campaign_id).push([r.date, _cdf(r.leads)]); }\n  for (const [campId, pts] of daily) {\n    pts.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[1] - y[1]));\n    const first = pts[0][0];\n    const age = _dayDiff(end, first) + 1;\n    if (!(age >= 10 && age <= 35)) continue;\n    const firstPlus7 = addDays(first, 7), endMinus7 = addDays(end, -7);\n    const first7 = pts.filter(([d]) => d < firstPlus7).reduce((s, [, l]) => s + l, 0);\n    const last7 = pts.filter(([d]) => d > endMinus7).reduce((s, [, l]) => s + l, 0);\n    if (first7 >= 10 && last7 <= CD.LEAD_DEATH_DROP * first7) {\n      const name = names['campaign|' + campId] || campId;\n      signals.push(_signal('new_angle', 'yellow', 'campaign', campId, name, name,\n        'lead death pattern — ' + first7.toFixed(0) + ' leads in week 1 → ' + last7.toFixed(0) + ' in the last 7 days (' + age + \" days live); Meta used up the warm pocket and the angle didn't scale\",\n        \"Biggest levers are offer, then creative: launch a new angle as a fresh test — don't tweak this one\", 0.0,\n        { first7_leads: first7, last7_leads: last7, age_days: age }));\n    }\n  }\n\n  const rank = { red: 0, yellow: 1, info: 2 };\n  signals.sort((x, y) => rank[x.severity] - rank[y.severity] || y.spend - x.spend);\n  const outRows = live.map((a) => {\n    const row = { ad_id: a.ad_id, ad_name: a.ad_name, campaign: a.campaign, adset: a.adset,\n      format: a.format, destination: a.destination, plays: a.plays || [] };\n    for (const [k, v] of Object.entries(a.m)) row[k] = _r4(v);\n    return row;\n  });\n  outRows.sort((x, y) => y.spend - x.spend);\n  return { ads: outRows, signals: signals.slice(0, CD.MAX_SIGNALS), ft_median: ftMedian };\n};\nconst req = $('Webhook').first().json;\nconst user = $('Build user').first().json.user;\n\nconst e = (req.query || {}).end;\nif (e !== undefined && e !== '' && !isDate(e)) return invalid(['query', 'end'], 'Input should be a valid date');\nreturn { slug: req.params.slug, end: e || yesterdayLA() };\n})();\nreturn [{ json: r && r.__fail ? { error: r.__fail } : { value: r ?? null } }];"
+      }
+    },
+    {
+      "id": "f0cb9e9b-2937-4b85-a487-f9428d1d6944",
+      "position": [
+        1980,
+        0
+      ],
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1fdb5ee6-9b3c-4627-a438-e557c9358805",
+              "leftValue": "={{ !$json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "8d834f06-455a-4dc4-a107-9c479062c126",
+      "position": [
+        2200,
+        0
+      ],
+      "name": "Query",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "postgres": {
+          "id": "UmpkC3NkKcg32kNA",
+          "name": "ZMS Supabase Postgres"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with cl as (select id from clients where slug = $1)\nselect case when exists (select 1 from cl) then (\nwith ad as (\n  select l.ad_id, l.adset_id, l.campaign_id, (l.date > $2::date - 7) cur, max(l.ad_name) ad_name,\n         sum(l.spend) spend, sum(l.impressions) imps, sum(l.clicks) clicks, sum(l.leads) leads, sum(l.reach) reach,\n         sum(l.unique_link_clicks) ulc, sum(l.unique_outbound_clicks) uoc,\n         sum(l.video_3s_plays) v3, sum(l.thruplays) thru,\n         sum((select coalesce(sum((a->>'value')::numeric), 0) from jsonb_array_elements(coalesce(l.raw->'actions', '[]'::jsonb)) a\n              where a->>'action_type' = 'landing_page_view')) lpv\n  from ad_level_metrics_daily l\n  where l.client_id = (select id from cl) and l.platform = 'meta' and l.date > $2::date - 14 and l.date <= $2::date\n  group by l.ad_id, l.adset_id, l.campaign_id, (l.date > $2::date - 7)\n),\nnames as (\n  select 'campaign' kind, campaign_id id, max(campaign_name) name from ad_metrics_daily\n   where client_id = (select id from cl) and platform = 'meta' and date > $2::date - 30 group by campaign_id\n  union all\n  select 'adset', adset_id, max(adset_name) from adset_metrics_daily\n   where client_id = (select id from cl) and platform = 'meta' and date > $2::date - 30 group by adset_id\n),\ncr as (\n  select cr.ad_id, cr.title, cr.body, cr.video_id, cr.image_url, cr.link_url, cr.effective_status\n  from meta_ad_creatives cr where cr.ad_id in (select ad_id from ad)\n),\nbk as (\n  select adset_name, sum(appointments) filter (where date > $2::date - 7) cur, sum(appointments) filter (where date <= $2::date - 7) prev\n  from ghl_adset_daily where client_id = (select id from cl) and date > $2::date - 14 and date <= $2::date group by adset_name\n),\nbu as (\n  select entity_type, entity_id, campaign_id, status, daily_budget, budget_source\n  from campaign_budgets where client_id = (select id from cl) and platform = 'meta'\n),\ncd as (\n  select campaign_id, date, sum(leads) leads, sum(spend) spend\n  from ad_metrics_daily where client_id = (select id from cl) and platform = 'meta' and date > $2::date - 45 and date <= $2::date\n  group by campaign_id, date\n)\nselect json_build_object(\n  'ads', coalesce((select json_agg(ad) from ad), '[]'::json),\n  'names', coalesce((select json_agg(names) from names), '[]'::json),\n  'creatives', coalesce((select json_agg(cr) from cr), '[]'::json),\n  'bookings', coalesce((select json_agg(bk) from bk), '[]'::json),\n  'budgets', coalesce((select json_agg(bu) from bu), '[]'::json),\n  'campaign_daily', coalesce((select json_agg(cd) from cd), '[]'::json)\n)\n) end as data",
+        "options": {
+          "queryReplacement": "={{ [$('Validate').first().json.value.slug, $('Validate').first().json.value.end] }}"
+        }
+      }
+    },
+    {
+      "id": "c2b1d028-be97-4ff2-a8df-5d1a701d8cf1",
+      "position": [
+        2420,
+        200
+      ],
+      "name": "DB error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const out = (() => {\n// Public dashboard URL (links in cards / Slack). Backend default: settings.dashboard_url.\nconst DASHBOARD_URL = 'https://zms-ad-reporting.netlify.app';\n// Dates are computed in the backend's timezone (TZ=America/Los_Angeles); ISO yyyy-mm-dd strings.\nconst todayLA = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());\nconst addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };\nconst yesterdayLA = () => addDays(todayLA(), -1);\n\n// Python's round(x, n) for display values (half-to-even on exact ties is not reproduced).\nconst pyRound = (x, n = 0) => (x === null || x === undefined ? x : Number(Number(x).toFixed(n)));\nconst num = (x) => (x === null || x === undefined ? 0 : Number(x));\nconst safeDiv = (a, b) => (b ? pyRound(a / b, 2) : null);\n\n// economics.py\nconst maxCpba = (job, close, margin, share) => {\n  const j = Number(job || 0);\n  if (!(j > 0)) return null;\n  return pyRound(j * Number(close || 0) * Number(margin || 0) * Number(share || 0), 2);\n};\nconst cpbaColor = (cpba, ceiling) => {\n  if (cpba === null || cpba === undefined || !ceiling) return null;\n  return cpba <= ceiling * 0.75 ? 'green' : cpba <= ceiling ? 'yellow' : 'red';\n};\n\n// targets.py — targets: array of service_targets rows\nconst indexTargets = (rows) => {\n  const m = new Map();\n  for (const r of rows || []) m.set(r.service + '|' + r.platform, r);\n  return m;\n};\nconst resolveTarget = (tg, service, platform) => {\n  if (!service) return null;\n  return tg.get(service + '|' + (platform || 'all')) || tg.get(service + '|all') || null;\n};\n// overview.py _expected: lead-weighted (else spend-weighted) CPL green/red for service rows\nconst expectedCpl = (rows, tg, clientGreen, clientRed) => {\n  let wg = 0, wr = 0, ws = 0;\n  for (const r of rows) {\n    const t = resolveTarget(tg, r.service, r.platform);\n    const g = t && t.cpl_green !== null && t.cpl_green !== undefined ? Number(t.cpl_green) : clientGreen;\n    const rd = t && t.cpl_red !== null && t.cpl_red !== undefined ? Number(t.cpl_red) : t ? g * 1.5 : clientRed;\n    const w = num(r.leads) || num(r.spend) * 0.01;\n    if (w <= 0) continue;\n    wg += g * w; wr += rd * w; ws += w;\n  }\n  return ws === 0 ? null : [pyRound(wg / ws, 2), pyRound(wr / ws, 2)];\n};\n\n// Rejections from a Validate step. fail() for plain errors, invalid() for FastAPI-style 422s.\nconst fail = (status, detail) => ({ __fail: { status, detail } });\nconst isDate = (s) => typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));\nconst invalid = (loc, msg, type = 'value_error') => fail(422, [{ type, loc, msg }]);\n\n// Minimal pydantic: spec = { field: { type: 'str'|'num'|'bool', required?, nullable?, min?, max?,\n// pattern?, default?, ge?, le?, int? } }. Unknown keys are rejected (extra=\"forbid\") unless allowExtra; strings are capped at 500 chars\n// (str_max_length). partial=true validates only the keys present (exclude_unset). Returns\n// { value } or a fail().\nconst checkBody = (spec, body, partial = false, allowExtra = false) => {\n  if (body === null || typeof body !== 'object' || Array.isArray(body)) {\n    return invalid(['body'], 'Input should be a valid dictionary', 'dict_type');\n  }\n  const errors = [];\n  const out = {};\n  for (const k of Object.keys(body)) {\n    if (!allowExtra && !(k in spec)) errors.push({ type: 'extra_forbidden', loc: ['body', k], msg: 'Extra inputs are not permitted' });\n  }\n  for (const [k, f] of Object.entries(spec)) {\n    const present = Object.prototype.hasOwnProperty.call(body, k);\n    if (!present) {\n      if (f.required && !partial) errors.push({ type: 'missing', loc: ['body', k], msg: 'Field required' });\n      else if (!partial) out[k] = f.default ?? null;\n      continue;\n    }\n    let v = body[k];\n    if (v === null) {\n      if (f.nullable === false) errors.push({ type: f.type + '_type', loc: ['body', k], msg: 'Input should not be None' });\n      out[k] = null;\n      continue;\n    }\n    if (f.type === 'str') {\n      if (typeof v !== 'string') { errors.push({ type: 'string_type', loc: ['body', k], msg: 'Input should be a valid string' }); continue; }\n      const max = Math.min(f.max ?? 500, 500);\n      if (f.min && v.length < f.min) errors.push({ type: 'string_too_short', loc: ['body', k], msg: 'String should have at least ' + f.min + ' character' + (f.min === 1 ? '' : 's') });\n      if (v.length > max) errors.push({ type: 'string_too_long', loc: ['body', k], msg: 'String should have at most ' + max + ' characters' });\n      if (f.pattern && !new RegExp(f.pattern).test(v)) errors.push({ type: 'string_pattern_mismatch', loc: ['body', k], msg: \"String should match pattern '\" + f.pattern + \"'\" });\n    } else if (f.type === 'num') {\n      if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) v = Number(v);\n      if (typeof v !== 'number' || !Number.isFinite(v)) { errors.push({ type: 'float_parsing', loc: ['body', k], msg: 'Input should be a valid number' }); continue; }\n      if (f.ge !== undefined && v < f.ge) errors.push({ type: 'greater_than_equal', loc: ['body', k], msg: 'Input should be greater than or equal to ' + f.ge });\n      if (f.le !== undefined && v > f.le) errors.push({ type: 'less_than_equal', loc: ['body', k], msg: 'Input should be less than or equal to ' + f.le });\n      if (f.int && !Number.isInteger(v)) errors.push({ type: 'int_from_float', loc: ['body', k], msg: 'Input should be a valid integer, got a number with a fractional part' });\n    } else if (f.type === 'bool') {\n      if (typeof v !== 'boolean') { errors.push({ type: 'bool_parsing', loc: ['body', k], msg: 'Input should be a valid boolean' }); continue; }\n    }\n    out[k] = v;\n  }\n  return errors.length ? fail(422, errors) : { value: out };\n};\n\n// audit_log context from the webhook request (core/audit.py client_ip + user agent)\nconst auditCtx = (req, user) => {\n  const h = req.headers || {};\n  let ip = h['cf-connecting-ip'] || h['x-real-ip'] || (h['x-forwarded-for'] || '').split(',')[0].trim() || null;\n  if (ip && !/^[0-9a-fA-F:.]{2,45}$/.test(ip)) ip = null; // only values the ::inet cast accepts\n  const ua = h['user-agent'] ? String(h['user-agent']).slice(0, 500) : null;\n  return { actor_id: user ? user.id : null, actor_email: user ? user.email : null, ip, user_agent: ua };\n};\nconst CD = { HOOK_LOW: 0.20, HOOK_BORDER: 0.25, HOLD_LOW: 0.20, HOLD_HIGH: 0.40, VIDEO_SHARE: 0.05, MIN_IMPS: 1500,\n  CTR_LOW: 0.01, CPC_WARN: 4.0, FT_MIN_CLICKS: 40, FT_ABS_LOW: 0.05, LPV_MIN_CLICKS: 30, LPV_LOW: 0.60,\n  PAGE_CVR_LOW: 0.03, FATIGUE_RISE: 0.20, FATIGUE_MIN_SPEND: 100.0, LEAD_DEATH_DROP: 0.40, ADS_PER_BUDGET: 10.0, MAX_SIGNALS: 8 };\nconst CD_PLAY = { new_hook: 'New hook', sharper_hook: 'Sharpen hook', fix_promise: 'Deliver the promise sooner',\n  swap_open: 'Swap the first 3 seconds', new_angle: 'New angle', fix_form: 'Fix form / offer',\n  fix_page: 'Fix landing page', fresh_test: 'Launch fresh test', trim_ads: 'Too many ads',\n  add_ads: 'Add ads', consolidate: 'Consolidate budget', add_diversity: 'Add a new concept' };\nconst _cdf = (v) => (v === null || v === undefined ? 0 : Number(v));\nconst _cdgrp = (v, d) => Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });\nconst _m = (v) => (v === null || v === undefined ? '—' : v >= 100 ? '$' + _cdgrp(v, 0) : '$' + _cdgrp(v, 2));\nconst _pct = (v, nd = 0) => (v === null || v === undefined ? '—' : (v * 100).toFixed(nd) + '%');\nconst _norm = (s, n) => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim().slice(0, n);\nconst _isForm = (link) => !link || link.includes('fb.me') || link.includes('facebook.com');\nconst _r4 = (v) => (typeof v === 'number' ? Number(v.toFixed(4)) : v);\nconst _median = (xs) => { const s = [...xs].sort((a, b) => a - b); const n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };\nconst _signal = (play, sev, entityType, entityId, entityName, campaign, text, nextStep, spend, evidence) => ({\n  kind: 'creative_signal', play, label: CD_PLAY[play], severity: sev,\n  entity_type: entityType, entity_id: entityId, entity_name: entityName,\n  campaign, message: entityName + ': ' + CD_PLAY[play].toLowerCase() + ' — ' + text,\n  text, next_step: nextStep, spend: pyRound(spend, 2), evidence, action: null });\nconst _struggling = (bookings, adsetName, leadsCur, leadsPrev) => {\n  const b = bookings[adsetName || ''];\n  if (b && (b[0] || b[1])) return b[0] === 0 || b[0] < b[1];\n  return leadsCur === 0 || (leadsPrev > 0 && leadsCur < 0.7 * leadsPrev);\n};\nconst _dayDiff = (a, b) => Math.round((Date.parse(a + 'T00:00:00Z') - Date.parse(b + 'T00:00:00Z')) / 86400000);\n\n// data = CREATIVE_SQL result, end = ISO date\nconst analyzeCreative = (data, end) => {\n  const names = {};\n  for (const r of data.names) names[r.kind + '|' + r.id] = r.name;\n  const ads = new Map();\n  for (const r of data.ads) {\n    if (!ads.has(r.ad_id)) ads.set(r.ad_id, { ad_id: r.ad_id, adset_id: r.adset_id, campaign_id: r.campaign_id, ad_name: r.ad_name, cur: {}, prev: {} });\n    const a = ads.get(r.ad_id);\n    const vals = {};\n    for (const k of ['spend', 'imps', 'clicks', 'leads', 'reach', 'ulc', 'uoc', 'v3', 'thru', 'lpv']) vals[k] = _cdf(r[k]);\n    a[r.cur ? 'cur' : 'prev'] = vals;\n    if (r.cur) a.ad_name = r.ad_name || a.ad_name;\n  }\n  if (!ads.size) return { ads: [], signals: [], ft_median: null };\n  const creatives = {};\n  for (const r of data.creatives) creatives[r.ad_id] = r;\n  const bookings = {};\n  for (const r of data.bookings) bookings[r.adset_name] = [_cdf(r.cur), _cdf(r.prev)];\n  const budgets = {};\n  for (const r of data.budgets) budgets[r.entity_type + '|' + r.entity_id] = r;\n  const g = (o, k) => o[k] || 0;\n  let signals = [];\n\n  for (const a of ads.values()) {\n    const c = a.cur, pv = a.prev;\n    const cr = creatives[a.ad_id] || {};\n    const form = _isForm(cr.link_url);\n    a.campaign = names['campaign|' + a.campaign_id] ?? null;\n    a.adset = names['adset|' + a.adset_id] ?? null;\n    a.format = cr.video_id || (c.imps && g(c, 'v3') >= CD.VIDEO_SHARE * c.imps) ? 'video' : 'image';\n    a.destination = form ? 'instant form' : 'website';\n    const imps = g(c, 'imps');\n    const unique = (!form && g(c, 'uoc') >= 0.5 * g(c, 'ulc') && g(c, 'uoc') > 0 ? g(c, 'uoc') : g(c, 'ulc')) || g(c, 'clicks');\n    a.m = {\n      spend: g(c, 'spend'), imps, leads: g(c, 'leads'), unique_clicks: unique,\n      ctr: imps ? unique / imps : null,\n      cpc: unique ? g(c, 'spend') / unique : null,\n      cpl: c.leads ? g(c, 'spend') / c.leads : null,\n      hook: imps && c.v3 ? g(c, 'v3') / imps : null,\n      hold: c.v3 ? g(c, 'thru') / c.v3 : null,\n      form_through: form && c.ulc ? g(c, 'leads') / c.ulc : null,\n      lpv_ratio: !form && unique ? g(c, 'lpv') / unique : null,\n      page_cvr: !form && c.lpv ? g(c, 'leads') / c.lpv : null,\n      freq: c.reach ? imps / c.reach : null,\n      freq_prev: pv.reach ? g(pv, 'imps') / pv.reach : null,\n      cpmr: c.reach ? g(c, 'spend') * 1000 / c.reach : null,\n      cpmr_prev: pv.reach ? g(pv, 'spend') * 1000 / pv.reach : null,\n      cpl_prev: pv.leads ? g(pv, 'spend') / pv.leads : null,\n      spend_prev: g(pv, 'spend'), leads_prev: g(pv, 'leads'),\n    };\n  }\n\n  const live = [...ads.values()].filter((a) => a.m.spend > 0);\n  const fts = live.filter((a) => a.m.form_through !== null && g(a.cur, 'ulc') >= CD.FT_MIN_CLICKS).map((a) => a.m.form_through);\n  const ftMedian = fts.length >= 3 ? _median(fts) : null;\n\n  for (const a of live) {\n    const m = a.m, name = a.ad_name || a.ad_id, camp = a.campaign;\n    const adSignals = [];\n    const ev = {};\n    for (const [k, v] of Object.entries(m)) ev[k] = _r4(v);\n    if (a.format === 'video' && m.imps >= CD.MIN_IMPS && m.hook !== null && m.hook >= CD.VIDEO_SHARE) {\n      const hook = m.hook, hold = m.hold;\n      if (hook < CD.HOOK_LOW && hold !== null && hold >= CD.HOLD_HIGH) {\n        adSignals.push(_signal('swap_open', 'yellow', 'ad', a.ad_id, name, camp,\n          'hook ' + _pct(hook) + ' (<20%) but hold ' + _pct(hold) + ' — the right people stay, too few are stopped',\n          'Re-cut only the first 3 seconds (new opening shot / on-screen text); keep the rest of the video', m.spend, ev));\n      } else if (hook < CD.HOOK_LOW) {\n        adSignals.push(_signal('new_hook', 'yellow', 'ad', a.ad_id, name, camp,\n          'hook ' + _pct(hook) + \" (<20%) — the first 3 seconds aren't stopping the scroll\",\n          'Test 2–3 new openings on the same video in a fresh test', m.spend, ev));\n      } else if (hook < CD.HOOK_BORDER) {\n        adSignals.push(_signal('sharper_hook', 'info', 'ad', a.ad_id, name, camp,\n          'hook ' + _pct(hook) + ' — borderline (20–25%)', 'Test a sharper opening line / visual', m.spend, ev));\n      } else if (hold !== null && hold < CD.HOLD_LOW && g(a.cur, 'v3') >= 300) {\n        adSignals.push(_signal('fix_promise', 'yellow', 'ad', a.ad_id, name, camp,\n          'hook ' + _pct(hook) + ' is good but hold ' + _pct(hold) + ' (<20%) — attention without payoff',\n          'Deliver the offer / result in the first 5–7 seconds after the hook', m.spend, ev));\n      }\n    }\n    if (m.imps >= 2000 && m.ctr !== null && m.ctr < CD.CTR_LOW) {\n      const cpc = m.cpc ? ', ' + _m(m.cpc) + ' per unique click' : '';\n      const weak = _struggling(bookings, a.adset, m.leads, m.leads_prev);\n      adSignals.push(_signal('new_angle', weak ? 'yellow' : 'info', 'ad', a.ad_id, name, camp,\n        'unique CTR ' + _pct(m.ctr, 2) + ' (<1%)' + cpc + \" — the message isn't landing\" + (weak ? '' : '; the ad set is still booking, so keep it running'),\n        weak ? 'Test a different angle / promise, not a copy tweak' : 'Test a new angle alongside it in a fresh test', m.spend, ev));\n    } else if (m.cpc !== null && m.cpc > CD.CPC_WARN && m.unique_clicks >= 30) {\n      adSignals.push(_signal('new_angle', 'info', 'ad', a.ad_id, name, camp,\n        _m(m.cpc) + ' per unique click (above the $3–4 range)', 'Watch; test a stronger angle if bookings are weak', m.spend, ev));\n    }\n    if (m.form_through !== null && g(a.cur, 'ulc') >= CD.FT_MIN_CLICKS && (m.ctr || 0) >= CD.CTR_LOW) {\n      const lowRel = ftMedian !== null && m.form_through < 0.5 * ftMedian;\n      if (m.form_through < CD.FT_ABS_LOW || lowRel) {\n        const rel = ftMedian ? ' vs ' + _pct(ftMedian) + \" across this client's ads\" : '';\n        adSignals.push(_signal('fix_form', 'yellow', 'ad', a.ad_id, name, camp,\n          'only ' + _pct(m.form_through) + ' of clickers submit' + rel + \" — CTR is fine, so it's the form or offer\",\n          'Rewrite the greeting screen and offer headline; keep fields and questions minimal until volume returns', m.spend,\n          { ...ev, working_threshold: 'form-through <5% or <half the client median' }));\n      }\n    }\n    if (m.lpv_ratio !== null && m.unique_clicks >= CD.LPV_MIN_CLICKS) {\n      if (m.lpv_ratio < CD.LPV_LOW) {\n        adSignals.push(_signal('fix_page', 'yellow', 'ad', a.ad_id, name, camp,\n          'only ' + _pct(m.lpv_ratio) + ' of clicks load the page — slow page or ad/page mismatch',\n          'Check load time on mobile (<3 s) and that the page headline matches the ad', m.spend,\n          { ...ev, working_threshold: 'landing-page views <60% of unique clicks' }));\n      } else if (m.page_cvr !== null && g(a.cur, 'lpv') >= 30 && m.page_cvr < CD.PAGE_CVR_LOW) {\n        adSignals.push(_signal('fix_page', 'yellow', 'ad', a.ad_id, name, camp,\n          'page loads fine but only ' + _pct(m.page_cvr, 1) + ' of visitors become leads',\n          \"Repair the page's offer, proof and form placement\", m.spend,\n          { ...ev, working_threshold: 'leads <3% of landing-page views' }));\n      }\n    }\n    if (m.spend >= CD.FATIGUE_MIN_SPEND && m.spend_prev >= CD.FATIGUE_MIN_SPEND && m.freq && m.freq_prev && m.cpmr && m.cpmr_prev) {\n      const fUp = m.freq / m.freq_prev - 1;\n      const rUp = m.cpmr / m.cpmr_prev - 1;\n      const worse = (m.cpl === null && m.leads_prev > 0) || (m.cpl && m.cpl_prev && m.cpl > 1.3 * m.cpl_prev);\n      const [bCur, bPrev] = bookings[a.adset || ''] || [0, 0];\n      const holding = bCur > 0 && bCur >= bPrev;\n      if (fUp >= CD.FATIGUE_RISE && rUp >= CD.FATIGUE_RISE && worse && !holding) {\n        adSignals.push(_signal('fresh_test', 'yellow', 'ad', a.ad_id, name, camp,\n          'frequency ' + m.freq_prev.toFixed(1) + '→' + m.freq.toFixed(1) + ' and cost per 1,000 reached ' + _m(m.cpmr_prev) + '→' + _m(m.cpmr) + ' while CPL rose — Meta is stuck in the same audience',\n          \"Launch the replacement as a fresh test (new campaign/ad set); keep this ad running until the replacement proves itself — don't pause it\", m.spend,\n          { ...ev, adset_bookings_cur: bCur, adset_bookings_prev: bPrev }));\n      }\n    }\n    signals.push(...adSignals);\n    a.plays = adSignals.map((s) => s.play);\n  }\n\n  const byAdset = new Map();\n  for (const a of live) { if (!byAdset.has(a.adset_id)) byAdset.set(a.adset_id, []); byAdset.get(a.adset_id).push(a); }\n  const campSpend = {};\n  for (const a of live) campSpend[a.campaign_id] = (campSpend[a.campaign_id] || 0) + a.m.spend;\n  for (const [adsetId, items] of byAdset) {\n    const campId = items[0].campaign_id;\n    const adsetName = items[0].adset || adsetId, camp = items[0].campaign;\n    const spend7 = items.reduce((s, i) => s + i.m.spend, 0);\n    const leads7 = items.reduce((s, i) => s + i.m.leads, 0);\n    const b = budgets['adset|' + adsetId];\n    const cb = budgets['campaign|' + campId];\n    let budget = null, src = null;\n    if (b && _cdf(b.daily_budget)) { budget = _cdf(b.daily_budget); src = 'ad set'; }\n    else if (cb && _cdf(cb.daily_budget) && campSpend[campId]) { budget = _cdf(cb.daily_budget) * spend7 / campSpend[campId]; src = 'share of CBO'; }\n    const n = items.length;\n    const ev = { ads: n, daily_budget: budget ? pyRound(budget, 2) : null, budget_source: src, spend_7: pyRound(spend7, 2), leads_7: leads7 };\n    if (budget && n > 5 && n > budget / CD.ADS_PER_BUDGET + 1) {\n      signals.push(_signal('trim_ads', 'yellow', 'adset', adsetId, adsetName, camp,\n        n + ' ads on about ' + _m(budget) + '/day (' + src + ') — about one ad per $10/day; spend is spread too thin for any ad to reach conversion volume',\n        'Keep the 3–5 ads with the most bookings; move new creative into a fresh test', spend7, ev));\n    }\n    const cpl7 = leads7 ? spend7 / leads7 : null;\n    if (spend7 >= 100 && leads7 < 7) {\n      const cantBuy = budget && cpl7 && budget < cpl7;\n      const canBuy = cantBuy ? \"can't buy one lead a day at a \" + _m(cpl7) + ' CPL' : 'under one lead a day';\n      signals.push(_signal('consolidate', leads7 < 3 ? 'yellow' : 'info', 'adset', adsetId, adsetName, camp,\n        leads7.toFixed(0) + ' lead' + (leads7 !== 1 ? 's' : '') + ' this week on ' + _m(spend7) + (budget ? ' (about ' + _m(budget) + '/day)' : '') + ' — ' + canBuy + '; ad sets without 1–2 conversions a day get lost',\n        'Consolidate into one ad set with a budget of at least 2× CPL per day', spend7, ev));\n    }\n    if (n >= 3) {\n      const concepts = new Set(items.map((i) => { const cr = creatives[i.ad_id] || {}; return _norm(cr.title, 40) + '\\u0000' + _norm(cr.body, 80); }));\n      concepts.delete('\\u0000');\n      const formats = [...new Set(items.map((i) => i.format))].sort();\n      const leadsPrev = items.reduce((s, i) => s + i.m.leads_prev, 0);\n      if (concepts.size === 1) {\n        const weak = _struggling(bookings, items[0].adset, leads7, leadsPrev);\n        signals.push(_signal('add_diversity', weak ? 'yellow' : 'info', 'adset', adsetId, adsetName, camp,\n          n + ' ads but one concept (' + formats.join('/') + \") — copy variations of one angle aren't diversity; campaigns built this way die in week 2\",\n          'Add a second angle (different promise or pain point), video first, in a fresh test', spend7, { ...ev, concepts: 1, formats }));\n      }\n    } else if (n < 3 && budget && budget >= 30 && spend7 >= 100) {\n      signals.push(_signal('add_ads', 'info', 'adset', adsetId, adsetName, camp,\n        'only ' + n + ' ad' + (n !== 1 ? 's' : '') + ' on ~' + _m(budget) + '/day', 'Test 3–5 ads per ad set', spend7, ev));\n    }\n  }\n\n  const daily = new Map();\n  for (const r of data.campaign_daily) { if (!daily.has(r.campaign_id)) daily.set(r.campaign_id, []); daily.get(r.campaign_id).push([r.date, _cdf(r.leads)]); }\n  for (const [campId, pts] of daily) {\n    pts.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[1] - y[1]));\n    const first = pts[0][0];\n    const age = _dayDiff(end, first) + 1;\n    if (!(age >= 10 && age <= 35)) continue;\n    const firstPlus7 = addDays(first, 7), endMinus7 = addDays(end, -7);\n    const first7 = pts.filter(([d]) => d < firstPlus7).reduce((s, [, l]) => s + l, 0);\n    const last7 = pts.filter(([d]) => d > endMinus7).reduce((s, [, l]) => s + l, 0);\n    if (first7 >= 10 && last7 <= CD.LEAD_DEATH_DROP * first7) {\n      const name = names['campaign|' + campId] || campId;\n      signals.push(_signal('new_angle', 'yellow', 'campaign', campId, name, name,\n        'lead death pattern — ' + first7.toFixed(0) + ' leads in week 1 → ' + last7.toFixed(0) + ' in the last 7 days (' + age + \" days live); Meta used up the warm pocket and the angle didn't scale\",\n        \"Biggest levers are offer, then creative: launch a new angle as a fresh test — don't tweak this one\", 0.0,\n        { first7_leads: first7, last7_leads: last7, age_days: age }));\n    }\n  }\n\n  const rank = { red: 0, yellow: 1, info: 2 };\n  signals.sort((x, y) => rank[x.severity] - rank[y.severity] || y.spend - x.spend);\n  const outRows = live.map((a) => {\n    const row = { ad_id: a.ad_id, ad_name: a.ad_name, campaign: a.campaign, adset: a.adset,\n      format: a.format, destination: a.destination, plays: a.plays || [] };\n    for (const [k, v] of Object.entries(a.m)) row[k] = _r4(v);\n    return row;\n  });\n  outRows.sort((x, y) => y.spend - x.spend);\n  return { ads: outRows, signals: signals.slice(0, CD.MAX_SIGNALS), ft_median: ftMedian };\n};\nconst req = $('Webhook').first().json;\nconst user = $('Build user').first().json.user;\nconst input = $('Validate').first().json.value;\nconst err = $json.error;\nreturn { status: 500, body: { detail: 'Internal Server Error' } };\n})();\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "0489e526-02b9-4853-a49b-d6d329d5c1b8",
+      "position": [
+        2640,
+        0
+      ],
+      "name": "Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const out = (() => {\n// Public dashboard URL (links in cards / Slack). Backend default: settings.dashboard_url.\nconst DASHBOARD_URL = 'https://zms-ad-reporting.netlify.app';\n// Dates are computed in the backend's timezone (TZ=America/Los_Angeles); ISO yyyy-mm-dd strings.\nconst todayLA = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());\nconst addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };\nconst yesterdayLA = () => addDays(todayLA(), -1);\n\n// Python's round(x, n) for display values (half-to-even on exact ties is not reproduced).\nconst pyRound = (x, n = 0) => (x === null || x === undefined ? x : Number(Number(x).toFixed(n)));\nconst num = (x) => (x === null || x === undefined ? 0 : Number(x));\nconst safeDiv = (a, b) => (b ? pyRound(a / b, 2) : null);\n\n// economics.py\nconst maxCpba = (job, close, margin, share) => {\n  const j = Number(job || 0);\n  if (!(j > 0)) return null;\n  return pyRound(j * Number(close || 0) * Number(margin || 0) * Number(share || 0), 2);\n};\nconst cpbaColor = (cpba, ceiling) => {\n  if (cpba === null || cpba === undefined || !ceiling) return null;\n  return cpba <= ceiling * 0.75 ? 'green' : cpba <= ceiling ? 'yellow' : 'red';\n};\n\n// targets.py — targets: array of service_targets rows\nconst indexTargets = (rows) => {\n  const m = new Map();\n  for (const r of rows || []) m.set(r.service + '|' + r.platform, r);\n  return m;\n};\nconst resolveTarget = (tg, service, platform) => {\n  if (!service) return null;\n  return tg.get(service + '|' + (platform || 'all')) || tg.get(service + '|all') || null;\n};\n// overview.py _expected: lead-weighted (else spend-weighted) CPL green/red for service rows\nconst expectedCpl = (rows, tg, clientGreen, clientRed) => {\n  let wg = 0, wr = 0, ws = 0;\n  for (const r of rows) {\n    const t = resolveTarget(tg, r.service, r.platform);\n    const g = t && t.cpl_green !== null && t.cpl_green !== undefined ? Number(t.cpl_green) : clientGreen;\n    const rd = t && t.cpl_red !== null && t.cpl_red !== undefined ? Number(t.cpl_red) : t ? g * 1.5 : clientRed;\n    const w = num(r.leads) || num(r.spend) * 0.01;\n    if (w <= 0) continue;\n    wg += g * w; wr += rd * w; ws += w;\n  }\n  return ws === 0 ? null : [pyRound(wg / ws, 2), pyRound(wr / ws, 2)];\n};\n\n// Rejections from a Validate step. fail() for plain errors, invalid() for FastAPI-style 422s.\nconst fail = (status, detail) => ({ __fail: { status, detail } });\nconst isDate = (s) => typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));\nconst invalid = (loc, msg, type = 'value_error') => fail(422, [{ type, loc, msg }]);\n\n// Minimal pydantic: spec = { field: { type: 'str'|'num'|'bool', required?, nullable?, min?, max?,\n// pattern?, default?, ge?, le?, int? } }. Unknown keys are rejected (extra=\"forbid\") unless allowExtra; strings are capped at 500 chars\n// (str_max_length). partial=true validates only the keys present (exclude_unset). Returns\n// { value } or a fail().\nconst checkBody = (spec, body, partial = false, allowExtra = false) => {\n  if (body === null || typeof body !== 'object' || Array.isArray(body)) {\n    return invalid(['body'], 'Input should be a valid dictionary', 'dict_type');\n  }\n  const errors = [];\n  const out = {};\n  for (const k of Object.keys(body)) {\n    if (!allowExtra && !(k in spec)) errors.push({ type: 'extra_forbidden', loc: ['body', k], msg: 'Extra inputs are not permitted' });\n  }\n  for (const [k, f] of Object.entries(spec)) {\n    const present = Object.prototype.hasOwnProperty.call(body, k);\n    if (!present) {\n      if (f.required && !partial) errors.push({ type: 'missing', loc: ['body', k], msg: 'Field required' });\n      else if (!partial) out[k] = f.default ?? null;\n      continue;\n    }\n    let v = body[k];\n    if (v === null) {\n      if (f.nullable === false) errors.push({ type: f.type + '_type', loc: ['body', k], msg: 'Input should not be None' });\n      out[k] = null;\n      continue;\n    }\n    if (f.type === 'str') {\n      if (typeof v !== 'string') { errors.push({ type: 'string_type', loc: ['body', k], msg: 'Input should be a valid string' }); continue; }\n      const max = Math.min(f.max ?? 500, 500);\n      if (f.min && v.length < f.min) errors.push({ type: 'string_too_short', loc: ['body', k], msg: 'String should have at least ' + f.min + ' character' + (f.min === 1 ? '' : 's') });\n      if (v.length > max) errors.push({ type: 'string_too_long', loc: ['body', k], msg: 'String should have at most ' + max + ' characters' });\n      if (f.pattern && !new RegExp(f.pattern).test(v)) errors.push({ type: 'string_pattern_mismatch', loc: ['body', k], msg: \"String should match pattern '\" + f.pattern + \"'\" });\n    } else if (f.type === 'num') {\n      if (typeof v === 'string' && v.trim() !== '' && !Number.isNaN(Number(v))) v = Number(v);\n      if (typeof v !== 'number' || !Number.isFinite(v)) { errors.push({ type: 'float_parsing', loc: ['body', k], msg: 'Input should be a valid number' }); continue; }\n      if (f.ge !== undefined && v < f.ge) errors.push({ type: 'greater_than_equal', loc: ['body', k], msg: 'Input should be greater than or equal to ' + f.ge });\n      if (f.le !== undefined && v > f.le) errors.push({ type: 'less_than_equal', loc: ['body', k], msg: 'Input should be less than or equal to ' + f.le });\n      if (f.int && !Number.isInteger(v)) errors.push({ type: 'int_from_float', loc: ['body', k], msg: 'Input should be a valid integer, got a number with a fractional part' });\n    } else if (f.type === 'bool') {\n      if (typeof v !== 'boolean') { errors.push({ type: 'bool_parsing', loc: ['body', k], msg: 'Input should be a valid boolean' }); continue; }\n    }\n    out[k] = v;\n  }\n  return errors.length ? fail(422, errors) : { value: out };\n};\n\n// audit_log context from the webhook request (core/audit.py client_ip + user agent)\nconst auditCtx = (req, user) => {\n  const h = req.headers || {};\n  let ip = h['cf-connecting-ip'] || h['x-real-ip'] || (h['x-forwarded-for'] || '').split(',')[0].trim() || null;\n  if (ip && !/^[0-9a-fA-F:.]{2,45}$/.test(ip)) ip = null; // only values the ::inet cast accepts\n  const ua = h['user-agent'] ? String(h['user-agent']).slice(0, 500) : null;\n  return { actor_id: user ? user.id : null, actor_email: user ? user.email : null, ip, user_agent: ua };\n};\nconst CD = { HOOK_LOW: 0.20, HOOK_BORDER: 0.25, HOLD_LOW: 0.20, HOLD_HIGH: 0.40, VIDEO_SHARE: 0.05, MIN_IMPS: 1500,\n  CTR_LOW: 0.01, CPC_WARN: 4.0, FT_MIN_CLICKS: 40, FT_ABS_LOW: 0.05, LPV_MIN_CLICKS: 30, LPV_LOW: 0.60,\n  PAGE_CVR_LOW: 0.03, FATIGUE_RISE: 0.20, FATIGUE_MIN_SPEND: 100.0, LEAD_DEATH_DROP: 0.40, ADS_PER_BUDGET: 10.0, MAX_SIGNALS: 8 };\nconst CD_PLAY = { new_hook: 'New hook', sharper_hook: 'Sharpen hook', fix_promise: 'Deliver the promise sooner',\n  swap_open: 'Swap the first 3 seconds', new_angle: 'New angle', fix_form: 'Fix form / offer',\n  fix_page: 'Fix landing page', fresh_test: 'Launch fresh test', trim_ads: 'Too many ads',\n  add_ads: 'Add ads', consolidate: 'Consolidate budget', add_diversity: 'Add a new concept' };\nconst _cdf = (v) => (v === null || v === undefined ? 0 : Number(v));\nconst _cdgrp = (v, d) => Number(v).toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });\nconst _m = (v) => (v === null || v === undefined ? '—' : v >= 100 ? '$' + _cdgrp(v, 0) : '$' + _cdgrp(v, 2));\nconst _pct = (v, nd = 0) => (v === null || v === undefined ? '—' : (v * 100).toFixed(nd) + '%');\nconst _norm = (s, n) => (s || '').toLowerCase().replace(/[^a-z0-9 ]/g, '').trim().slice(0, n);\nconst _isForm = (link) => !link || link.includes('fb.me') || link.includes('facebook.com');\nconst _r4 = (v) => (typeof v === 'number' ? Number(v.toFixed(4)) : v);\nconst _median = (xs) => { const s = [...xs].sort((a, b) => a - b); const n = s.length; return n % 2 ? s[(n - 1) / 2] : (s[n / 2 - 1] + s[n / 2]) / 2; };\nconst _signal = (play, sev, entityType, entityId, entityName, campaign, text, nextStep, spend, evidence) => ({\n  kind: 'creative_signal', play, label: CD_PLAY[play], severity: sev,\n  entity_type: entityType, entity_id: entityId, entity_name: entityName,\n  campaign, message: entityName + ': ' + CD_PLAY[play].toLowerCase() + ' — ' + text,\n  text, next_step: nextStep, spend: pyRound(spend, 2), evidence, action: null });\nconst _struggling = (bookings, adsetName, leadsCur, leadsPrev) => {\n  const b = bookings[adsetName || ''];\n  if (b && (b[0] || b[1])) return b[0] === 0 || b[0] < b[1];\n  return leadsCur === 0 || (leadsPrev > 0 && leadsCur < 0.7 * leadsPrev);\n};\nconst _dayDiff = (a, b) => Math.round((Date.parse(a + 'T00:00:00Z') - Date.parse(b + 'T00:00:00Z')) / 86400000);\n\n// data = CREATIVE_SQL result, end = ISO date\nconst analyzeCreative = (data, end) => {\n  const names = {};\n  for (const r of data.names) names[r.kind + '|' + r.id] = r.name;\n  const ads = new Map();\n  for (const r of data.ads) {\n    if (!ads.has(r.ad_id)) ads.set(r.ad_id, { ad_id: r.ad_id, adset_id: r.adset_id, campaign_id: r.campaign_id, ad_name: r.ad_name, cur: {}, prev: {} });\n    const a = ads.get(r.ad_id);\n    const vals = {};\n    for (const k of ['spend', 'imps', 'clicks', 'leads', 'reach', 'ulc', 'uoc', 'v3', 'thru', 'lpv']) vals[k] = _cdf(r[k]);\n    a[r.cur ? 'cur' : 'prev'] = vals;\n    if (r.cur) a.ad_name = r.ad_name || a.ad_name;\n  }\n  if (!ads.size) return { ads: [], signals: [], ft_median: null };\n  const creatives = {};\n  for (const r of data.creatives) creatives[r.ad_id] = r;\n  const bookings = {};\n  for (const r of data.bookings) bookings[r.adset_name] = [_cdf(r.cur), _cdf(r.prev)];\n  const budgets = {};\n  for (const r of data.budgets) budgets[r.entity_type + '|' + r.entity_id] = r;\n  const g = (o, k) => o[k] || 0;\n  let signals = [];\n\n  for (const a of ads.values()) {\n    const c = a.cur, pv = a.prev;\n    const cr = creatives[a.ad_id] || {};\n    const form = _isForm(cr.link_url);\n    a.campaign = names['campaign|' + a.campaign_id] ?? null;\n    a.adset = names['adset|' + a.adset_id] ?? null;\n    a.format = cr.video_id || (c.imps && g(c, 'v3') >= CD.VIDEO_SHARE * c.imps) ? 'video' : 'image';\n    a.destination = form ? 'instant form' : 'website';\n    const imps = g(c, 'imps');\n    const unique = (!form && g(c, 'uoc') >= 0.5 * g(c, 'ulc') && g(c, 'uoc') > 0 ? g(c, 'uoc') : g(c, 'ulc')) || g(c, 'clicks');\n    a.m = {\n      spend: g(c, 'spend'), imps, leads: g(c, 'leads'), unique_clicks: unique,\n      ctr: imps ? unique / imps : null,\n      cpc: unique ? g(c, 'spend') / unique : null,\n      cpl: c.leads ? g(c, 'spend') / c.leads : null,\n      hook: imps && c.v3 ? g(c, 'v3') / imps : null,\n      hold: c.v3 ? g(c, 'thru') / c.v3 : null,\n      form_through: form && c.ulc ? g(c, 'leads') / c.ulc : null,\n      lpv_ratio: !form && unique ? g(c, 'lpv') / unique : null,\n      page_cvr: !form && c.lpv ? g(c, 'leads') / c.lpv : null,\n      freq: c.reach ? imps / c.reach : null,\n      freq_prev: pv.reach ? g(pv, 'imps') / pv.reach : null,\n      cpmr: c.reach ? g(c, 'spend') * 1000 / c.reach : null,\n      cpmr_prev: pv.reach ? g(pv, 'spend') * 1000 / pv.reach : null,\n      cpl_prev: pv.leads ? g(pv, 'spend') / pv.leads : null,\n      spend_prev: g(pv, 'spend'), leads_prev: g(pv, 'leads'),\n    };\n  }\n\n  const live = [...ads.values()].filter((a) => a.m.spend > 0);\n  const fts = live.filter((a) => a.m.form_through !== null && g(a.cur, 'ulc') >= CD.FT_MIN_CLICKS).map((a) => a.m.form_through);\n  const ftMedian = fts.length >= 3 ? _median(fts) : null;\n\n  for (const a of live) {\n    const m = a.m, name = a.ad_name || a.ad_id, camp = a.campaign;\n    const adSignals = [];\n    const ev = {};\n    for (const [k, v] of Object.entries(m)) ev[k] = _r4(v);\n    if (a.format === 'video' && m.imps >= CD.MIN_IMPS && m.hook !== null && m.hook >= CD.VIDEO_SHARE) {\n      const hook = m.hook, hold = m.hold;\n      if (hook < CD.HOOK_LOW && hold !== null && hold >= CD.HOLD_HIGH) {\n        adSignals.push(_signal('swap_open', 'yellow', 'ad', a.ad_id, name, camp,\n          'hook ' + _pct(hook) + ' (<20%) but hold ' + _pct(hold) + ' — the right people stay, too few are stopped',\n          'Re-cut only the first 3 seconds (new opening shot / on-screen text); keep the rest of the video', m.spend, ev));\n      } else if (hook < CD.HOOK_LOW) {\n        adSignals.push(_signal('new_hook', 'yellow', 'ad', a.ad_id, name, camp,\n          'hook ' + _pct(hook) + \" (<20%) — the first 3 seconds aren't stopping the scroll\",\n          'Test 2–3 new openings on the same video in a fresh test', m.spend, ev));\n      } else if (hook < CD.HOOK_BORDER) {\n        adSignals.push(_signal('sharper_hook', 'info', 'ad', a.ad_id, name, camp,\n          'hook ' + _pct(hook) + ' — borderline (20–25%)', 'Test a sharper opening line / visual', m.spend, ev));\n      } else if (hold !== null && hold < CD.HOLD_LOW && g(a.cur, 'v3') >= 300) {\n        adSignals.push(_signal('fix_promise', 'yellow', 'ad', a.ad_id, name, camp,\n          'hook ' + _pct(hook) + ' is good but hold ' + _pct(hold) + ' (<20%) — attention without payoff',\n          'Deliver the offer / result in the first 5–7 seconds after the hook', m.spend, ev));\n      }\n    }\n    if (m.imps >= 2000 && m.ctr !== null && m.ctr < CD.CTR_LOW) {\n      const cpc = m.cpc ? ', ' + _m(m.cpc) + ' per unique click' : '';\n      const weak = _struggling(bookings, a.adset, m.leads, m.leads_prev);\n      adSignals.push(_signal('new_angle', weak ? 'yellow' : 'info', 'ad', a.ad_id, name, camp,\n        'unique CTR ' + _pct(m.ctr, 2) + ' (<1%)' + cpc + \" — the message isn't landing\" + (weak ? '' : '; the ad set is still booking, so keep it running'),\n        weak ? 'Test a different angle / promise, not a copy tweak' : 'Test a new angle alongside it in a fresh test', m.spend, ev));\n    } else if (m.cpc !== null && m.cpc > CD.CPC_WARN && m.unique_clicks >= 30) {\n      adSignals.push(_signal('new_angle', 'info', 'ad', a.ad_id, name, camp,\n        _m(m.cpc) + ' per unique click (above the $3–4 range)', 'Watch; test a stronger angle if bookings are weak', m.spend, ev));\n    }\n    if (m.form_through !== null && g(a.cur, 'ulc') >= CD.FT_MIN_CLICKS && (m.ctr || 0) >= CD.CTR_LOW) {\n      const lowRel = ftMedian !== null && m.form_through < 0.5 * ftMedian;\n      if (m.form_through < CD.FT_ABS_LOW || lowRel) {\n        const rel = ftMedian ? ' vs ' + _pct(ftMedian) + \" across this client's ads\" : '';\n        adSignals.push(_signal('fix_form', 'yellow', 'ad', a.ad_id, name, camp,\n          'only ' + _pct(m.form_through) + ' of clickers submit' + rel + \" — CTR is fine, so it's the form or offer\",\n          'Rewrite the greeting screen and offer headline; keep fields and questions minimal until volume returns', m.spend,\n          { ...ev, working_threshold: 'form-through <5% or <half the client median' }));\n      }\n    }\n    if (m.lpv_ratio !== null && m.unique_clicks >= CD.LPV_MIN_CLICKS) {\n      if (m.lpv_ratio < CD.LPV_LOW) {\n        adSignals.push(_signal('fix_page', 'yellow', 'ad', a.ad_id, name, camp,\n          'only ' + _pct(m.lpv_ratio) + ' of clicks load the page — slow page or ad/page mismatch',\n          'Check load time on mobile (<3 s) and that the page headline matches the ad', m.spend,\n          { ...ev, working_threshold: 'landing-page views <60% of unique clicks' }));\n      } else if (m.page_cvr !== null && g(a.cur, 'lpv') >= 30 && m.page_cvr < CD.PAGE_CVR_LOW) {\n        adSignals.push(_signal('fix_page', 'yellow', 'ad', a.ad_id, name, camp,\n          'page loads fine but only ' + _pct(m.page_cvr, 1) + ' of visitors become leads',\n          \"Repair the page's offer, proof and form placement\", m.spend,\n          { ...ev, working_threshold: 'leads <3% of landing-page views' }));\n      }\n    }\n    if (m.spend >= CD.FATIGUE_MIN_SPEND && m.spend_prev >= CD.FATIGUE_MIN_SPEND && m.freq && m.freq_prev && m.cpmr && m.cpmr_prev) {\n      const fUp = m.freq / m.freq_prev - 1;\n      const rUp = m.cpmr / m.cpmr_prev - 1;\n      const worse = (m.cpl === null && m.leads_prev > 0) || (m.cpl && m.cpl_prev && m.cpl > 1.3 * m.cpl_prev);\n      const [bCur, bPrev] = bookings[a.adset || ''] || [0, 0];\n      const holding = bCur > 0 && bCur >= bPrev;\n      if (fUp >= CD.FATIGUE_RISE && rUp >= CD.FATIGUE_RISE && worse && !holding) {\n        adSignals.push(_signal('fresh_test', 'yellow', 'ad', a.ad_id, name, camp,\n          'frequency ' + m.freq_prev.toFixed(1) + '→' + m.freq.toFixed(1) + ' and cost per 1,000 reached ' + _m(m.cpmr_prev) + '→' + _m(m.cpmr) + ' while CPL rose — Meta is stuck in the same audience',\n          \"Launch the replacement as a fresh test (new campaign/ad set); keep this ad running until the replacement proves itself — don't pause it\", m.spend,\n          { ...ev, adset_bookings_cur: bCur, adset_bookings_prev: bPrev }));\n      }\n    }\n    signals.push(...adSignals);\n    a.plays = adSignals.map((s) => s.play);\n  }\n\n  const byAdset = new Map();\n  for (const a of live) { if (!byAdset.has(a.adset_id)) byAdset.set(a.adset_id, []); byAdset.get(a.adset_id).push(a); }\n  const campSpend = {};\n  for (const a of live) campSpend[a.campaign_id] = (campSpend[a.campaign_id] || 0) + a.m.spend;\n  for (const [adsetId, items] of byAdset) {\n    const campId = items[0].campaign_id;\n    const adsetName = items[0].adset || adsetId, camp = items[0].campaign;\n    const spend7 = items.reduce((s, i) => s + i.m.spend, 0);\n    const leads7 = items.reduce((s, i) => s + i.m.leads, 0);\n    const b = budgets['adset|' + adsetId];\n    const cb = budgets['campaign|' + campId];\n    let budget = null, src = null;\n    if (b && _cdf(b.daily_budget)) { budget = _cdf(b.daily_budget); src = 'ad set'; }\n    else if (cb && _cdf(cb.daily_budget) && campSpend[campId]) { budget = _cdf(cb.daily_budget) * spend7 / campSpend[campId]; src = 'share of CBO'; }\n    const n = items.length;\n    const ev = { ads: n, daily_budget: budget ? pyRound(budget, 2) : null, budget_source: src, spend_7: pyRound(spend7, 2), leads_7: leads7 };\n    if (budget && n > 5 && n > budget / CD.ADS_PER_BUDGET + 1) {\n      signals.push(_signal('trim_ads', 'yellow', 'adset', adsetId, adsetName, camp,\n        n + ' ads on about ' + _m(budget) + '/day (' + src + ') — about one ad per $10/day; spend is spread too thin for any ad to reach conversion volume',\n        'Keep the 3–5 ads with the most bookings; move new creative into a fresh test', spend7, ev));\n    }\n    const cpl7 = leads7 ? spend7 / leads7 : null;\n    if (spend7 >= 100 && leads7 < 7) {\n      const cantBuy = budget && cpl7 && budget < cpl7;\n      const canBuy = cantBuy ? \"can't buy one lead a day at a \" + _m(cpl7) + ' CPL' : 'under one lead a day';\n      signals.push(_signal('consolidate', leads7 < 3 ? 'yellow' : 'info', 'adset', adsetId, adsetName, camp,\n        leads7.toFixed(0) + ' lead' + (leads7 !== 1 ? 's' : '') + ' this week on ' + _m(spend7) + (budget ? ' (about ' + _m(budget) + '/day)' : '') + ' — ' + canBuy + '; ad sets without 1–2 conversions a day get lost',\n        'Consolidate into one ad set with a budget of at least 2× CPL per day', spend7, ev));\n    }\n    if (n >= 3) {\n      const concepts = new Set(items.map((i) => { const cr = creatives[i.ad_id] || {}; return _norm(cr.title, 40) + '\\u0000' + _norm(cr.body, 80); }));\n      concepts.delete('\\u0000');\n      const formats = [...new Set(items.map((i) => i.format))].sort();\n      const leadsPrev = items.reduce((s, i) => s + i.m.leads_prev, 0);\n      if (concepts.size === 1) {\n        const weak = _struggling(bookings, items[0].adset, leads7, leadsPrev);\n        signals.push(_signal('add_diversity', weak ? 'yellow' : 'info', 'adset', adsetId, adsetName, camp,\n          n + ' ads but one concept (' + formats.join('/') + \") — copy variations of one angle aren't diversity; campaigns built this way die in week 2\",\n          'Add a second angle (different promise or pain point), video first, in a fresh test', spend7, { ...ev, concepts: 1, formats }));\n      }\n    } else if (n < 3 && budget && budget >= 30 && spend7 >= 100) {\n      signals.push(_signal('add_ads', 'info', 'adset', adsetId, adsetName, camp,\n        'only ' + n + ' ad' + (n !== 1 ? 's' : '') + ' on ~' + _m(budget) + '/day', 'Test 3–5 ads per ad set', spend7, ev));\n    }\n  }\n\n  const daily = new Map();\n  for (const r of data.campaign_daily) { if (!daily.has(r.campaign_id)) daily.set(r.campaign_id, []); daily.get(r.campaign_id).push([r.date, _cdf(r.leads)]); }\n  for (const [campId, pts] of daily) {\n    pts.sort((x, y) => (x[0] < y[0] ? -1 : x[0] > y[0] ? 1 : x[1] - y[1]));\n    const first = pts[0][0];\n    const age = _dayDiff(end, first) + 1;\n    if (!(age >= 10 && age <= 35)) continue;\n    const firstPlus7 = addDays(first, 7), endMinus7 = addDays(end, -7);\n    const first7 = pts.filter(([d]) => d < firstPlus7).reduce((s, [, l]) => s + l, 0);\n    const last7 = pts.filter(([d]) => d > endMinus7).reduce((s, [, l]) => s + l, 0);\n    if (first7 >= 10 && last7 <= CD.LEAD_DEATH_DROP * first7) {\n      const name = names['campaign|' + campId] || campId;\n      signals.push(_signal('new_angle', 'yellow', 'campaign', campId, name, name,\n        'lead death pattern — ' + first7.toFixed(0) + ' leads in week 1 → ' + last7.toFixed(0) + ' in the last 7 days (' + age + \" days live); Meta used up the warm pocket and the angle didn't scale\",\n        \"Biggest levers are offer, then creative: launch a new angle as a fresh test — don't tweak this one\", 0.0,\n        { first7_leads: first7, last7_leads: last7, age_days: age }));\n    }\n  }\n\n  const rank = { red: 0, yellow: 1, info: 2 };\n  signals.sort((x, y) => rank[x.severity] - rank[y.severity] || y.spend - x.spend);\n  const outRows = live.map((a) => {\n    const row = { ad_id: a.ad_id, ad_name: a.ad_name, campaign: a.campaign, adset: a.adset,\n      format: a.format, destination: a.destination, plays: a.plays || [] };\n    for (const [k, v] of Object.entries(a.m)) row[k] = _r4(v);\n    return row;\n  });\n  outRows.sort((x, y) => y.spend - x.spend);\n  return { ads: outRows, signals: signals.slice(0, CD.MAX_SIGNALS), ft_median: ftMedian };\n};\nconst req = $('Webhook').first().json;\nconst user = $('Build user').first().json.user;\nconst input = $('Validate').first().json.value;\nconst data = $json.data;\n\nif (!data) return { status: 404, body: { detail: 'Client not found' } };\nconst r = analyzeCreative(data, input.end);\nreturn { body: { end: input.end, window_days: 7, ft_median: r.ft_median, ads: r.ads, signals: r.signals,\n  benchmarks: { hook_low: CD.HOOK_LOW, hook_border: CD.HOOK_BORDER, hold_low: CD.HOLD_LOW, hold_high: CD.HOLD_HIGH,\n    ctr_low: CD.CTR_LOW, cpc_warn: CD.CPC_WARN, lpv_low: CD.LPV_LOW, ft_low: CD.FT_ABS_LOW } } };\n})();\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "09dc9ffa-d509-4205-a020-be3d2ff23b2a",
+      "position": [
+        2860,
+        0
+      ],
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ $json.body === undefined ? '' : JSON.stringify($json.body) }}",
+        "options": {
+          "responseCode": "={{ $json.status ?? 200 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read token": {
+      "main": [
+        [
+          {
+            "node": "Has token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has token?": {
+      "main": [
+        [
+          {
+            "node": "Verify JWT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify JWT": {
+      "main": [
+        [
+          {
+            "node": "Load profile",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Token error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load profile": {
+      "main": [
+        [
+          {
+            "node": "Build user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build user": {
+      "main": [
+        [
+          {
+            "node": "Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token error": {
+      "main": [
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorized?": {
+      "main": [
+        [
+          {
+            "node": "Validate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query": {
+      "main": [
+        [
+          {
+            "node": "Shape",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB error": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  }
+}

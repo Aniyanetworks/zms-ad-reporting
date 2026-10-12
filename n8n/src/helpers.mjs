@@ -1,6 +1,13 @@
 // JavaScript injected at the top of every Code node that shapes a response.
 // Ports of backend/app/services/{economics,targets}.py and small router helpers.
 export const HELPERS = String.raw`
+// Public dashboard URL (links in cards / Slack). Backend default: settings.dashboard_url.
+const DASHBOARD_URL = 'https://zms-ad-reporting.netlify.app';
+// Dates are computed in the backend's timezone (TZ=America/Los_Angeles); ISO yyyy-mm-dd strings.
+const todayLA = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/Los_Angeles', year: 'numeric', month: '2-digit', day: '2-digit' }).format(new Date());
+const addDays = (iso, n) => { const d = new Date(iso + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+const yesterdayLA = () => addDays(todayLA(), -1);
+
 // Python's round(x, n) for display values (half-to-even on exact ties is not reproduced).
 const pyRound = (x, n = 0) => (x === null || x === undefined ? x : Number(Number(x).toFixed(n)));
 const num = (x) => (x === null || x === undefined ? 0 : Number(x));

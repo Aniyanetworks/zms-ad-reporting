@@ -211,6 +211,7 @@ export function endpoint(def) {
   const userExpr = def.auth === "none" ? "null" : "$('Build user').first().json.user";
   const prelude = [
     HELPERS.trim(),
+    ...(def.libs || []).map((l) => l.trim()),
     "const req = $('Webhook').first().json;",
     `const user = ${userExpr};`,
   ];
