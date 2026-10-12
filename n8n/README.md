@@ -94,8 +94,8 @@ Status: ☐ todo · ◐ built · ✓ parity-verified & routed
 | 30 | POST | /api/recommendations/bulk-approve | actions.py | 2 | ☐ |
 | 31 | POST | /api/clients/{slug}/recommendations/{rec_id}/execute | actions.py | 4 | ☐ |
 | 32 | POST | /api/recommendations/bulk-execute | actions.py | 4 | ☐ |
-| 33 | GET | /api/brief/dates | brief.py | 1 | ☐ |
-| 34 | GET | /api/brief | brief.py | 1 | ☐ |
+| 33 | GET | /api/brief/dates | brief.py | 1 | ◐ |
+| 34 | GET | /api/brief | brief.py | 1 | ◐ |
 | 35 | POST | /api/brief/run | brief.py | 4 | ☐ |
 | 36 | GET | /api/integrations | integrations.py | 1 | ☐ |
 | 37 | POST | /api/integrations/run | integrations.py | 3 | ☐ |
