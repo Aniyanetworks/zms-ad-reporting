@@ -40,6 +40,10 @@ const SECURITY_HEADERS = [
 ];
 
 const nextConfig: NextConfig = {
+  // Build sha for /healthz: explicit env (Docker, CI) first, then Netlify's COMMIT_REF.
+  env: {
+    NEXT_PUBLIC_GIT_SHA: process.env.NEXT_PUBLIC_GIT_SHA || process.env.COMMIT_REF || "dev",
+  },
   allowedDevOrigins: [
     "ads.contractorscalingblueprint.com",
     "setter.contractorscalingblueprint.com",

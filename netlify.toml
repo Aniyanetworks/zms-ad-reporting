@@ -7,7 +7,9 @@
 # variables listed in docs/NETLIFY.md. Everything else is in this file.
 [build]
   base    = "frontend"
-  command = "NEXT_PUBLIC_GIT_SHA=${COMMIT_REF} npm ci --no-audit --no-fund && NEXT_PUBLIC_GIT_SHA=${COMMIT_REF} npm run build"
+  # Shell-agnostic (also runs under cmd.exe for local `netlify deploy` on Windows);
+  # next.config.ts falls back to Netlify's COMMIT_REF for NEXT_PUBLIC_GIT_SHA.
+  command = "npm ci --no-audit --no-fund && npm run build"
   publish = ".next"
 
 [build.environment]
