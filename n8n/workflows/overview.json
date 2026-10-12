@@ -1,0 +1,511 @@
+{
+  "name": "ZMS API · GET /api/overview",
+  "nodes": [
+    {
+      "id": "d8895150-2791-4434-ac4d-179123a0013c",
+      "position": [
+        0,
+        0
+      ],
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "webhookId": "4e466656-71b9-4092-a43a-55ee83e45ee3",
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "api/overview",
+        "responseMode": "responseNode",
+        "options": {}
+      }
+    },
+    {
+      "id": "579b4133-17aa-4170-ad9b-62191de74e76",
+      "position": [
+        220,
+        0
+      ],
+      "name": "Read token",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const m = /^Bearer\\s+(.+)$/i.exec(($json.headers || {}).authorization || '');\nreturn [{ json: m ? { token: m[1].trim() } : { error: { status: 401, detail: 'Missing token' } } }];"
+      }
+    },
+    {
+      "id": "8eba54ce-8195-4556-ac0e-9e4b41e1c1c8",
+      "position": [
+        440,
+        0
+      ],
+      "name": "Has token?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1fdb5ee6-9b3c-4627-a438-e557c9358805",
+              "leftValue": "={{ !$json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "645b535e-fdd0-4c83-ab25-ad001977c198",
+      "position": [
+        660,
+        0
+      ],
+      "name": "Verify JWT",
+      "type": "n8n-nodes-base.jwt",
+      "typeVersion": 1,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "jwtAuth": {
+          "id": "VO3CX2JfTZ8fKIez",
+          "name": "ZMS Supabase JWT (public key)"
+        }
+      },
+      "parameters": {
+        "operation": "verify",
+        "token": "={{ $json.token }}",
+        "options": {}
+      }
+    },
+    {
+      "id": "cc5c7fad-0ec3-4cf6-adfc-2dcbb96ea42c",
+      "position": [
+        880,
+        200
+      ],
+      "name": "Token error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const e = $json.error;\nconst msg = (e && (e.message || e.description)) || (typeof e === 'string' ? e : 'invalid token');\nreturn [{ json: { error: { status: 401, detail: `Invalid token: ${msg}` } } }];"
+      }
+    },
+    {
+      "id": "7e82ceeb-67a9-4607-a0c9-e9d5d29c344b",
+      "position": [
+        1100,
+        0
+      ],
+      "name": "Load profile",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "credentials": {
+        "postgres": {
+          "id": "UmpkC3NkKcg32kNA",
+          "name": "ZMS Supabase Postgres"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "select coalesce((select to_jsonb(p) from (select role, full_name from profiles where id = $1::uuid) p), '{}'::jsonb) as profile",
+        "options": {
+          "queryReplacement": "={{ [($json.payload ?? $json).sub] }}"
+        }
+      }
+    },
+    {
+      "id": "b1fc53f5-f520-4119-ac76-2eaf70f0a160",
+      "position": [
+        1320,
+        0
+      ],
+      "name": "Build user",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const v = $('Verify JWT').first().json;\nconst claims = v.payload ?? v;\nconst aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];\nif (!aud.includes('authenticated')) return [{ json: { error: { status: 401, detail: 'Invalid token: Invalid audience' } } }];\nconst p = $json.profile || {};\nconst role = [\"admin\",\"media_buyer\",\"viewer\"].includes(p.role) ? p.role : 'viewer';\nconst user = { id: claims.sub, email: claims.email ?? null, role, full_name: p.full_name ?? null };\nreturn [{ json: { user } }];"
+      }
+    },
+    {
+      "id": "b1a68c0e-b2a4-433e-ac11-e2dbc614589a",
+      "position": [
+        1540,
+        0
+      ],
+      "name": "Authorized?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1fdb5ee6-9b3c-4627-a438-e557c9358805",
+              "leftValue": "={{ !$json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "537c92e9-9c15-47b3-a761-bb6e9525b6ce",
+      "position": [
+        1760,
+        300
+      ],
+      "name": "Respond error",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ JSON.stringify({ detail: $json.error.detail }) }}",
+        "options": {
+          "responseCode": "={{ $json.error.status }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    },
+    {
+      "id": "7a8265db-4d59-499a-a2fc-1666c5516537",
+      "position": [
+        1760,
+        0
+      ],
+      "name": "Validate",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const error = (() => {\n// Python's round(x, n) for display values (half-to-even on exact ties is not reproduced).\nconst pyRound = (x, n = 0) => (x === null || x === undefined ? x : Number(Number(x).toFixed(n)));\nconst num = (x) => (x === null || x === undefined ? 0 : Number(x));\nconst safeDiv = (a, b) => (b ? pyRound(a / b, 2) : null);\n\n// economics.py\nconst maxCpba = (job, close, margin, share) => {\n  const j = Number(job || 0);\n  if (!(j > 0)) return null;\n  return pyRound(j * Number(close || 0) * Number(margin || 0) * Number(share || 0), 2);\n};\nconst cpbaColor = (cpba, ceiling) => {\n  if (cpba === null || cpba === undefined || !ceiling) return null;\n  return cpba <= ceiling * 0.75 ? 'green' : cpba <= ceiling ? 'yellow' : 'red';\n};\n\n// targets.py — targets: array of service_targets rows\nconst indexTargets = (rows) => {\n  const m = new Map();\n  for (const r of rows || []) m.set(r.service + '|' + r.platform, r);\n  return m;\n};\nconst resolveTarget = (tg, service, platform) => {\n  if (!service) return null;\n  return tg.get(service + '|' + (platform || 'all')) || tg.get(service + '|all') || null;\n};\n// overview.py _expected: lead-weighted (else spend-weighted) CPL green/red for service rows\nconst expectedCpl = (rows, tg, clientGreen, clientRed) => {\n  let wg = 0, wr = 0, ws = 0;\n  for (const r of rows) {\n    const t = resolveTarget(tg, r.service, r.platform);\n    const g = t && t.cpl_green !== null && t.cpl_green !== undefined ? Number(t.cpl_green) : clientGreen;\n    const rd = t && t.cpl_red !== null && t.cpl_red !== undefined ? Number(t.cpl_red) : t ? g * 1.5 : clientRed;\n    const w = num(r.leads) || num(r.spend) * 0.01;\n    if (w <= 0) continue;\n    wg += g * w; wr += rd * w; ws += w;\n  }\n  return ws === 0 ? null : [pyRound(wg / ws, 2), pyRound(wr / ws, 2)];\n};\n\n// FastAPI-style 422 for a missing / malformed query parameter\nconst isDate = (s) => typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));\nconst invalid = (loc, msg) => ({ status: 422, detail: [{ type: 'value_error', loc, msg }] });\nconst req = $('Webhook').first().json;\nconst user = $('Build user').first().json.user;\n\nconst q = req.query || {};\nif (!q.start) return invalid(['query', 'start'], 'Field required');\nif (!q.end) return invalid(['query', 'end'], 'Field required');\nif (!isDate(q.start)) return invalid(['query', 'start'], 'Input should be a valid date');\nif (!isDate(q.end)) return invalid(['query', 'end'], 'Input should be a valid date');\nreturn null;\n})();\nreturn [{ json: error ? { error } : {} }];"
+      }
+    },
+    {
+      "id": "ef4ec56e-e7e1-421a-a9d5-67be66ed4230",
+      "position": [
+        1980,
+        0
+      ],
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "1fdb5ee6-9b3c-4627-a438-e557c9358805",
+              "leftValue": "={{ !$json.error }}",
+              "rightValue": "",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "9811e327-f155-43ff-aa3a-a688524f416c",
+      "position": [
+        2200,
+        0
+      ],
+      "name": "Query",
+      "type": "n8n-nodes-base.postgres",
+      "typeVersion": 2.5,
+      "onError": "continueErrorOutput",
+      "credentials": {
+        "postgres": {
+          "id": "UmpkC3NkKcg32kNA",
+          "name": "ZMS Supabase Postgres"
+        }
+      },
+      "parameters": {
+        "operation": "executeQuery",
+        "query": "with ads as (\n  select client_id,\n         sum(spend) filter (where platform = 'meta')   as meta_spend,\n         sum(leads) filter (where platform = 'meta')   as meta_leads,\n         sum(spend) filter (where platform = 'google') as google_spend,\n         sum(leads) filter (where platform = 'google') as google_leads,\n         sum(spend) filter (where platform = 'lsa')    as lsa_spend,\n         sum(leads) filter (where platform = 'lsa')    as lsa_leads,\n         sum(spend) as total_spend,\n         sum(leads) as total_leads\n  from ad_metrics_daily\n  where date between $1::date and $2::date\n  group by client_id\n),\nghl as (\n  select client_id,\n         sum(contacts_created)         as contacts_created,\n         sum(contacts_paid_attributed) as contacts_paid_attributed,\n         sum(inbound_calls)            as inbound_calls,\n         sum(appointments_booked)      as appointments_booked\n  from ghl_metrics_daily\n  where date between $1::date and $2::date\n  group by client_id\n),\no as (\n  select c.id, c.name, c.slug, c.cpl_target_green, c.cpl_target_red,\n         c.avg_job_value, c.close_rate, c.gross_margin_pct, c.max_ad_cost_share,\n         coalesce(a.meta_spend, 0)   as meta_spend,\n         coalesce(a.meta_leads, 0)   as meta_leads,\n         coalesce(a.google_spend, 0) as google_spend,\n         coalesce(a.google_leads, 0) as google_leads,\n         coalesce(a.lsa_spend, 0)    as lsa_spend,\n         coalesce(a.lsa_leads, 0)    as lsa_leads,\n         coalesce(a.total_spend, 0)  as total_spend,\n         coalesce(a.total_leads, 0)  as total_leads,\n         coalesce(g.contacts_created, 0)         as ghl_contacts_created,\n         coalesce(g.contacts_paid_attributed, 0) as ghl_contacts_paid,\n         coalesce(g.inbound_calls, 0)            as ghl_inbound_calls,\n         coalesce(g.appointments_booked, 0)      as ghl_appointments\n  from clients c\n  left join ads a on a.client_id = c.id\n  left join ghl g on g.client_id = c.id\n  where c.is_active = true\n),\nspark as (\n  select client_id, date, sum(spend) as spend,\n         sum(spend) filter (where platform = 'meta')   as meta_spend,\n         sum(spend) filter (where platform = 'google') as google_spend,\n         sum(spend) filter (where platform = 'lsa')    as lsa_spend\n  from ad_metrics_daily\n  where date between $1::date and $2::date\n  group by client_id, date\n),\nmix as (\n  select m.client_id, m.platform,\n         coalesce(csm.service, c.default_service, 'Unclassified') as service,\n         sum(m.leads) as leads, sum(m.spend) as spend\n  from ad_metrics_daily m\n  join clients c on c.id = m.client_id\n  left join campaign_service_map csm\n    on csm.client_id = m.client_id and csm.platform = m.platform and csm.campaign_id = m.campaign_id\n  where m.date between $1::date and $2::date\n  group by 1, 2, 3\n)\nselect json_build_object(\n  'rows',    coalesce((select json_agg(o order by o.name) from o), '[]'::json),\n  'spark',   coalesce((select json_agg(s order by s.date) from spark s), '[]'::json),\n  'mix',     coalesce((select json_agg(m) from mix m), '[]'::json),\n  'targets', coalesce((select json_agg(t) from service_targets t), '[]'::json)\n) as data",
+        "options": {
+          "queryReplacement": "={{ [$('Webhook').first().json.query.start, $('Webhook').first().json.query.end] }}"
+        }
+      }
+    },
+    {
+      "id": "042294a1-108d-42d5-a3f2-f2a006547821",
+      "position": [
+        2420,
+        200
+      ],
+      "name": "DB error",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const out = (() => {\n// Python's round(x, n) for display values (half-to-even on exact ties is not reproduced).\nconst pyRound = (x, n = 0) => (x === null || x === undefined ? x : Number(Number(x).toFixed(n)));\nconst num = (x) => (x === null || x === undefined ? 0 : Number(x));\nconst safeDiv = (a, b) => (b ? pyRound(a / b, 2) : null);\n\n// economics.py\nconst maxCpba = (job, close, margin, share) => {\n  const j = Number(job || 0);\n  if (!(j > 0)) return null;\n  return pyRound(j * Number(close || 0) * Number(margin || 0) * Number(share || 0), 2);\n};\nconst cpbaColor = (cpba, ceiling) => {\n  if (cpba === null || cpba === undefined || !ceiling) return null;\n  return cpba <= ceiling * 0.75 ? 'green' : cpba <= ceiling ? 'yellow' : 'red';\n};\n\n// targets.py — targets: array of service_targets rows\nconst indexTargets = (rows) => {\n  const m = new Map();\n  for (const r of rows || []) m.set(r.service + '|' + r.platform, r);\n  return m;\n};\nconst resolveTarget = (tg, service, platform) => {\n  if (!service) return null;\n  return tg.get(service + '|' + (platform || 'all')) || tg.get(service + '|all') || null;\n};\n// overview.py _expected: lead-weighted (else spend-weighted) CPL green/red for service rows\nconst expectedCpl = (rows, tg, clientGreen, clientRed) => {\n  let wg = 0, wr = 0, ws = 0;\n  for (const r of rows) {\n    const t = resolveTarget(tg, r.service, r.platform);\n    const g = t && t.cpl_green !== null && t.cpl_green !== undefined ? Number(t.cpl_green) : clientGreen;\n    const rd = t && t.cpl_red !== null && t.cpl_red !== undefined ? Number(t.cpl_red) : t ? g * 1.5 : clientRed;\n    const w = num(r.leads) || num(r.spend) * 0.01;\n    if (w <= 0) continue;\n    wg += g * w; wr += rd * w; ws += w;\n  }\n  return ws === 0 ? null : [pyRound(wg / ws, 2), pyRound(wr / ws, 2)];\n};\n\n// FastAPI-style 422 for a missing / malformed query parameter\nconst isDate = (s) => typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));\nconst invalid = (loc, msg) => ({ status: 422, detail: [{ type: 'value_error', loc, msg }] });\nconst req = $('Webhook').first().json;\nconst user = $('Build user').first().json.user;\nconst err = $json.error;\nreturn { status: 500, body: { detail: 'Internal Server Error' } };\n})();\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "a4b9562f-a344-4579-abd6-b185b2e537c6",
+      "position": [
+        2640,
+        0
+      ],
+      "name": "Shape",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "parameters": {
+        "jsCode": "const out = (() => {\n// Python's round(x, n) for display values (half-to-even on exact ties is not reproduced).\nconst pyRound = (x, n = 0) => (x === null || x === undefined ? x : Number(Number(x).toFixed(n)));\nconst num = (x) => (x === null || x === undefined ? 0 : Number(x));\nconst safeDiv = (a, b) => (b ? pyRound(a / b, 2) : null);\n\n// economics.py\nconst maxCpba = (job, close, margin, share) => {\n  const j = Number(job || 0);\n  if (!(j > 0)) return null;\n  return pyRound(j * Number(close || 0) * Number(margin || 0) * Number(share || 0), 2);\n};\nconst cpbaColor = (cpba, ceiling) => {\n  if (cpba === null || cpba === undefined || !ceiling) return null;\n  return cpba <= ceiling * 0.75 ? 'green' : cpba <= ceiling ? 'yellow' : 'red';\n};\n\n// targets.py — targets: array of service_targets rows\nconst indexTargets = (rows) => {\n  const m = new Map();\n  for (const r of rows || []) m.set(r.service + '|' + r.platform, r);\n  return m;\n};\nconst resolveTarget = (tg, service, platform) => {\n  if (!service) return null;\n  return tg.get(service + '|' + (platform || 'all')) || tg.get(service + '|all') || null;\n};\n// overview.py _expected: lead-weighted (else spend-weighted) CPL green/red for service rows\nconst expectedCpl = (rows, tg, clientGreen, clientRed) => {\n  let wg = 0, wr = 0, ws = 0;\n  for (const r of rows) {\n    const t = resolveTarget(tg, r.service, r.platform);\n    const g = t && t.cpl_green !== null && t.cpl_green !== undefined ? Number(t.cpl_green) : clientGreen;\n    const rd = t && t.cpl_red !== null && t.cpl_red !== undefined ? Number(t.cpl_red) : t ? g * 1.5 : clientRed;\n    const w = num(r.leads) || num(r.spend) * 0.01;\n    if (w <= 0) continue;\n    wg += g * w; wr += rd * w; ws += w;\n  }\n  return ws === 0 ? null : [pyRound(wg / ws, 2), pyRound(wr / ws, 2)];\n};\n\n// FastAPI-style 422 for a missing / malformed query parameter\nconst isDate = (s) => typeof s === 'string' && /^\\d{4}-\\d{2}-\\d{2}$/.test(s) && !Number.isNaN(Date.parse(s));\nconst invalid = (loc, msg) => ({ status: 422, detail: [{ type: 'value_error', loc, msg }] });\nconst req = $('Webhook').first().json;\nconst user = $('Build user').first().json.user;\nconst data = $json.data;\n\nconst tg = indexTargets(data.targets);\nconst mix = new Map();\nfor (const m of data.mix) { if (!mix.has(m.client_id)) mix.set(m.client_id, []); mix.get(m.client_id).push(m); }\nconst sp = { all: new Map(), meta: new Map(), google: new Map(), lsa: new Map() };\nconst push = (map, id, v) => { if (!map.has(id)) map.set(id, []); map.get(id).push(v); };\nfor (const s of data.spark) {\n  push(sp.all, s.client_id, num(s.spend));\n  push(sp.meta, s.client_id, num(s.meta_spend));\n  push(sp.google, s.client_id, num(s.google_spend));\n  push(sp.lsa, s.client_id, num(s.lsa_spend));\n}\nconst FLOATS = ['meta_spend', 'meta_leads', 'google_spend', 'google_leads', 'lsa_spend', 'lsa_leads',\n  'total_spend', 'total_leads', 'cpl_target_green', 'cpl_target_red'];\nconst clients = data.rows.map((r) => {\n  const d = { ...r };\n  for (const k of FLOATS) d[k] = num(d[k]);\n  d.meta_cpl = safeDiv(d.meta_spend, d.meta_leads);\n  d.google_cpl = safeDiv(d.google_spend, d.google_leads);\n  d.lsa_cpl = safeDiv(d.lsa_spend, d.lsa_leads);\n  d.blended_cpl = safeDiv(d.total_spend, d.total_leads);\n  d.cost_per_appointment = safeDiv(d.total_spend, num(d.ghl_appointments));\n  d.cpba_max = maxCpba(d.avg_job_value, d.close_rate, d.gross_margin_pct, d.max_ad_cost_share);\n  delete d.avg_job_value; delete d.close_rate; delete d.gross_margin_pct; delete d.max_ad_cost_share;\n  d.cpba_color = cpbaColor(d.cost_per_appointment, d.cpba_max);\n  d.lead_to_appt_rate = d.total_leads ? pyRound(num(d.ghl_appointments) / d.total_leads, 4) : null;\n  const rowsAll = mix.get(d.id) || [];\n  for (const [plat, key] of [['meta', 'meta'], ['google', 'google'], ['lsa', 'lsa'], [null, 'blended']]) {\n    const sub = rowsAll.filter((m) => plat === null || m.platform === plat);\n    const exp = expectedCpl(sub, tg, d.cpl_target_green, d.cpl_target_red);\n    d[key + '_target_green'] = exp ? exp[0] : null;\n    d[key + '_target_red'] = exp ? exp[1] : null;\n  }\n  d.spark = sp.all.get(d.id) || [];\n  d.spark_meta = sp.meta.get(d.id) || [];\n  d.spark_google = sp.google.get(d.id) || [];\n  d.spark_lsa = sp.lsa.get(d.id) || [];\n  return d;\n});\nconst totals = {\n  total_spend: pyRound(clients.reduce((s, c) => s + c.total_spend, 0), 2),\n  total_leads: pyRound(clients.reduce((s, c) => s + c.total_leads, 0), 2),\n  total_appointments: clients.reduce((s, c) => s + num(c.ghl_appointments), 0),\n};\ntotals.blended_cpl = safeDiv(totals.total_spend, totals.total_leads);\ntotals.cost_per_appointment = safeDiv(totals.total_spend, totals.total_appointments);\nreturn { body: { start: req.query.start, end: req.query.end, totals, clients } };\n})();\nreturn [{ json: out }];"
+      }
+    },
+    {
+      "id": "b9eeb229-cae8-4396-a8ff-56fdad679ea7",
+      "position": [
+        2860,
+        0
+      ],
+      "name": "Respond",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "={{ JSON.stringify($json.body) }}",
+        "options": {
+          "responseCode": "={{ $json.status ?? 200 }}",
+          "responseHeaders": {
+            "entries": [
+              {
+                "name": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "name": "Cache-Control",
+                "value": "no-store"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read token",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read token": {
+      "main": [
+        [
+          {
+            "node": "Has token?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has token?": {
+      "main": [
+        [
+          {
+            "node": "Verify JWT",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Verify JWT": {
+      "main": [
+        [
+          {
+            "node": "Load profile",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Token error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Load profile": {
+      "main": [
+        [
+          {
+            "node": "Build user",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build user": {
+      "main": [
+        [
+          {
+            "node": "Authorized?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Token error": {
+      "main": [
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Authorized?": {
+      "main": [
+        [
+          {
+            "node": "Validate",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Query",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Query": {
+      "main": [
+        [
+          {
+            "node": "Shape",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "DB error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Shape": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "DB error": {
+      "main": [
+        [
+          {
+            "node": "Respond",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "all"
+  }
+}

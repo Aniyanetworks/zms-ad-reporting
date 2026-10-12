@@ -7,6 +7,7 @@
 // {"detail": ...} body. SQL builds the JSON in Postgres (json_agg / to_json) so numbers
 // and timestamps serialize the way FastAPI's encoder did.
 import { createHash } from "node:crypto";
+import { HELPERS } from "./helpers.mjs";
 
 export const CREDENTIALS = {
   postgres: { id: "UmpkC3NkKcg32kNA", name: "ZMS Supabase Postgres" },
@@ -60,6 +61,8 @@ const jsonResponse = (bodyExpr, statusExpr) => ({
  * @param {string} def.shape    Code-node body. In scope: data, user, req (webhook item json).
  *                              Must `return { status?, body }`.
  * @param {string} [def.onDbError] Code-node body run when the query fails; same return shape.
+ * @param {string} [def.validate] Code-node body run before the query. In scope: user, req and
+ *                              the helpers. Return null when valid, else { status, detail }.
  */
 export function endpoint(def) {
   const name = `ZMS API · ${def.method} ${def.path.replace(/:(\w+)/g, "{$1}")}`;
@@ -158,7 +161,7 @@ export function endpoint(def) {
         operation: "executeQuery",
         query:
           "select coalesce((select to_jsonb(p) from (select role, full_name from profiles where id = $1::uuid) p), '{}'::jsonb) as profile",
-        options: { queryReplacement: "={{ [$json.sub] }}" },
+        options: { queryReplacement: "={{ [($json.payload ?? $json).sub] }}" },
       },
     });
     link(verify, profile, 0);
@@ -169,7 +172,8 @@ export function endpoint(def) {
       typeVersion: 2,
       parameters: {
         jsCode: [
-          "const claims = $('Verify JWT').first().json;",
+          "const v = $('Verify JWT').first().json;",
+          "const claims = v.payload ?? v;",
           "const aud = Array.isArray(claims.aud) ? claims.aud : [claims.aud];",
           "if (!aud.includes('authenticated')) return [{ json: { error: { status: 401, detail: 'Invalid token: Invalid audience' } } }];",
           "const p = $json.profile || {};",
@@ -199,9 +203,32 @@ export function endpoint(def) {
 
   const userExpr = def.auth === "none" ? "null" : "$('Build user').first().json.user";
   const prelude = [
+    HELPERS.trim(),
     "const req = $('Webhook').first().json;",
     `const user = ${userExpr};`,
   ];
+
+  if (def.validate) {
+    if (!nodes.some((n) => n.name === respondError.name)) {
+      nodes.push({ id: uuid(`${name}/${respondError.name}`), position: [x, 300], ...respondError });
+    }
+    const validate = add({
+      name: "Validate",
+      type: "n8n-nodes-base.code",
+      typeVersion: 2,
+      parameters: {
+        jsCode: [...prelude, def.validate]
+          .join("\n")
+          .replace(/^/, "const error = (() => {\n")
+          .concat("\n})();\nreturn [{ json: error ? { error } : {} }];"),
+      },
+    });
+    link(last, validate, 0);
+    const valid = add({ name: "Valid?", type: "n8n-nodes-base.if", typeVersion: 2, parameters: ifTrue("!$json.error") });
+    link(validate, valid);
+    link(valid, respondError.name, 1);
+    last = valid;
+  }
 
   let shapeInput = last;
   let dbErrorNode;

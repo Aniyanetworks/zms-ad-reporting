@@ -66,7 +66,7 @@ Status: ☐ todo · ◐ built · ✓ parity-verified & routed
 | 4 | GET | /api/clients | clients.py | 1 | ◐ |
 | 5 | POST | /api/clients | clients.py | 2 | ☐ |
 | 6 | PATCH | /api/clients/{client_id} | clients.py | 2 | ☐ |
-| 7 | GET | /api/overview | overview.py | 1 | ☐ |
+| 7 | GET | /api/overview | overview.py | 1 | ◐ |
 | 8 | GET | /api/today | today.py | 1 | ☐ |
 | 9 | GET | /api/clients/{slug}/plays | today.py | 1 | ☐ |
 | 10 | GET | /api/clients/{slug}/creative-health | today.py | 1 | ☐ |
