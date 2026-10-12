@@ -37,3 +37,6 @@ Backups/
 
 # Supabase CLI scratch
 supabase/.temp/
+
+# Local Netlify folder
+.netlify
