@@ -1,0 +1,60 @@
+# PRODUCTION overlay — always combined with docker-compose.yml.
+#
+#   docker compose -f docker-compose.yml -f compose.production.yml up -d --wait --remove-orphans
+#   docker compose -f docker-compose.yml -f compose.production.yml ps
+#
+# The compose project name is the directory name (zms-ad-reporting), which is the
+# project that is running today, so an in-place `up -d` recreates the existing
+# zms-ads-* containers rather than starting a second copy. Prefer scripts/deploy.sh
+# production <sha>, which adds the health gate and automatic rollback.
+#
+# Host ports are bound to 127.0.0.1 only; Cloudflare Tunnel fronts 3010
+# (ads./adbuildout./setter. hostnames). 6380/8010 are for local debugging.
+# Secrets: backend/.env (never in the repo); override the path with BACKEND_ENV_FILE
+# (scripts/deploy.sh does this on the CI runner, whose checkout holds no secrets).
+# Web build args (NEXT_PUBLIC_*) come from the root .env, or `--env-file <file>`.
+
+services:
+  redis:
+    container_name: zms-ads-redis
+    ports:
+      - "127.0.0.1:6380:6379"   # 6380 on host to avoid clashing with the SEO dashboard's redis (6379)
+
+  api:
+    container_name: zms-ads-api
+    env_file:
+      - ${BACKEND_ENV_FILE:-./backend/.env}
+    environment:
+      ENVIRONMENT: production
+    ports:
+      - "127.0.0.1:8010:8000"
+
+  celery-worker:
+    container_name: zms-ads-celery-worker
+    env_file:
+      - ${BACKEND_ENV_FILE:-./backend/.env}
+    environment:
+      ENVIRONMENT: production
+
+  celery-beat:
+    container_name: zms-ads-celery-beat
+    env_file:
+      - ${BACKEND_ENV_FILE:-./backend/.env}
+    environment:
+      ENVIRONMENT: production
+
+  web:
+    container_name: zms-ads-web
+    build:
+      args:
+        NEXT_PUBLIC_ENVIRONMENT: production
+    environment:
+      NEXT_PUBLIC_ENVIRONMENT: production
+      LEADERBOARD_HOST: ${LEADERBOARD_HOST:-setter.contractorscalingblueprint.com}
+    ports:
+      - "127.0.0.1:3010:3000"
+
+volumes:
+  redis-data:
+    # Keep the volume the running stack already uses (project_volume naming).
+    name: zms-ad-reporting_redis-data

@@ -1,0 +1,39 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+.mypy_cache/
+
+# dlt
+backend/.dlt/secrets.toml
+backend/_storage/
+**/.dlt/*.duckdb
+**/.dlt/pipelines/
+
+# Node
+node_modules/
+.next/
+out/
+
+# Env
+.env
+.env.local
+.env.*.local
+
+# OS / editor
+.DS_Store
+*.log
+
+# Env files per environment (never commit; backend/.env.staging.example is the template)
+.env.staging
+.env.production
+
+# Deploy state written by scripts/deploy.sh (<env>.current / .previous / .history)
+.deploy/
+
+# Local backups (scripts/backup-*.sh default to ~/Backups/zms-ads, but never commit a copy)
+Backups/
+
+# Supabase CLI scratch
+supabase/.temp/

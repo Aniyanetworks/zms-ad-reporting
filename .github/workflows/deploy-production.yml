@@ -1,0 +1,100 @@
+name: Deploy production
+
+# Manual promotion of a commit that is ALREADY running on staging.
+#
+# The org is on GitHub Free (no branch protection / required reviewers on private repos),
+# so approval is enforced inside the workflow:
+#   1. github.actor must be listed in the repo variable PRODUCTION_DEPLOYERS
+#      (comma-separated GitHub logins). Set it once with:
+#        gh variable set PRODUCTION_DEPLOYERS -R zmsseoagency/zms-ad-reporting --body "carl-zms"
+#      (replace carl-zms with the real login(s); `gh api user --jq .login` prints yours).
+#      When the variable is unset the workflow refuses to deploy.
+#   2. `confirm` must equal exactly "deploy <sha>" (a typed acknowledgement of the sha).
+#   3. <sha> must equal ~/.zms-ads/deploy/staging.current on the runner — the commit
+#      that the staging deploy verified last. Nothing else can be promoted.
+# Optionally also protect the `production` environment in repo Settings > Environments
+# (a wait timer works on Free; required reviewers need a paid plan for private repos).
+
+on:
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: Full 40-char commit sha that is currently deployed on staging
+        required: true
+      confirm:
+        description: 'Type exactly: deploy <sha>'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to production
+    runs-on: [self-hosted, macmini]
+    environment: production
+    timeout-minutes: 40
+    env:
+      TARGET_SHA: ${{ inputs.sha }}
+      CONFIRM: ${{ inputs.confirm }}
+      ACTOR: ${{ github.actor }}
+      PRODUCTION_DEPLOYERS: ${{ vars.PRODUCTION_DEPLOYERS }}
+    steps:
+      - name: Guard — allow-list, confirmation phrase, staging parity
+        run: |
+          set -euo pipefail
+          fail() { echo "::error::$1"; exit 1; }
+          state="$HOME/.zms-ads/deploy"
+
+          case "$TARGET_SHA" in
+            [0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f][0-9a-f]) ;;
+            *) fail "sha must be the full 40-character lowercase commit sha (got '$TARGET_SHA')" ;;
+          esac
+
+          [ -n "$PRODUCTION_DEPLOYERS" ] || fail "repo variable PRODUCTION_DEPLOYERS is not set — refusing (see workflow header)"
+          allowed=",$(printf '%s' "$PRODUCTION_DEPLOYERS" | tr -d '[:space:]'),"
+          case "$allowed" in
+            *",$ACTOR,"*) echo "actor $ACTOR is an allowed production deployer" ;;
+            *) fail "actor '$ACTOR' is not in PRODUCTION_DEPLOYERS" ;;
+          esac
+
+          [ "$CONFIRM" = "deploy $TARGET_SHA" ] || fail "confirm must be exactly 'deploy $TARGET_SHA'"
+
+          staging=$(cat "$state/staging.current" 2>/dev/null || true)
+          [ -n "$staging" ] || fail "no verified staging deploy recorded on this runner ($state/staging.current)"
+          [ "$staging" = "$TARGET_SHA" ] || fail "sha $TARGET_SHA is not the commit verified on staging ($staging) — deploy it to staging first"
+          echo "guard passed: $TARGET_SHA is the verified staging commit"
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Runner state locations
+        run: |
+          set -euo pipefail
+          echo "ZMS_DEPLOY_STATE_DIR=$HOME/.zms-ads/deploy" >> "$GITHUB_ENV"
+          echo "ZMS_SECRETS_DIR=$HOME/.zms-ads/secrets" >> "$GITHUB_ENV"
+          test -f "$HOME/.zms-ads/secrets/production/backend.env" || { echo "::error::~/.zms-ads/secrets/production/backend.env missing on runner"; exit 1; }
+          test -f "$HOME/.zms-ads/secrets/production/web.env"     || { echo "::error::~/.zms-ads/secrets/production/web.env missing on runner"; exit 1; }
+
+      - name: Deploy (health gate + automatic rollback inside deploy.sh)
+        run: scripts/deploy.sh production "$TARGET_SHA"
+
+      - name: Post-deploy health
+        run: scripts/health.sh production
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Production deploy by $ACTOR"
+            echo "- sha: \`$TARGET_SHA\`"
+            echo "- current: \`$(cat "$ZMS_DEPLOY_STATE_DIR/production.current" 2>/dev/null || echo '?')\`"
+            echo "- previous (rollback target): \`$(cat "$ZMS_DEPLOY_STATE_DIR/production.previous" 2>/dev/null || echo '-')\`"
+          } >> "$GITHUB_STEP_SUMMARY"

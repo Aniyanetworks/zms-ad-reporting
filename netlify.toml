@@ -1,0 +1,29 @@
+# Netlify hosts the Next.js FRONTEND only. The FastAPI backend, Celery syncs and
+# the nightly brief keep running in Docker on the Mac mini; the frontend reaches
+# them through the public API hostname below (Cloudflare tunnel → api:8000), via
+# the same-origin /api rewrite in next.config.ts — so no CORS and no cookie games.
+#
+# Site settings that live in the Netlify UI (not here): the four environment
+# variables listed in docs/NETLIFY.md. Everything else is in this file.
+[build]
+  base    = "frontend"
+  command = "NEXT_PUBLIC_GIT_SHA=${COMMIT_REF} npm ci --no-audit --no-fund && NEXT_PUBLIC_GIT_SHA=${COMMIT_REF} npm run build"
+  publish = ".next"
+
+[build.environment]
+  NODE_VERSION = "22"
+  NEXT_TELEMETRY_DISABLED = "1"
+  NEXT_PUBLIC_ENVIRONMENT = "production"
+  # Where /api/* is proxied. Public hostname on the Cloudflare tunnel → Mac mini api:8000.
+  API_URL = "https://api-ads.contractorscalingblueprint.com"
+
+# Deploy previews and branch deploys point at the same backend but announce
+# themselves as staging so the header badge shows it.
+[context.deploy-preview.environment]
+  NEXT_PUBLIC_ENVIRONMENT = "staging"
+
+[context.branch-deploy.environment]
+  NEXT_PUBLIC_ENVIRONMENT = "staging"
+
+[[plugins]]
+  package = "@netlify/plugin-nextjs"

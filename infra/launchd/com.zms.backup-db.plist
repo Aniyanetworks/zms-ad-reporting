@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Nightly Postgres backup (03:15 local) — LaunchAgent TEMPLATE.
+  Replace /Users/zms with the home of the user that owns the checkout, then:
+    mkdir -p ~/Library/Logs/zms-ads
+    cp infra/launchd/com.zms.backup-db.plist ~/Library/LaunchAgents/
+    launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/com.zms.backup-db.plist
+    launchctl kickstart -k gui/$(id -u)/com.zms.backup-db      # run once now
+  Settings (AGE_RECIPIENT, BACKUP_DIR, BACKUP_REMOTE) come from ~/.config/zms/backup.env.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.zms.backup-db</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/zms/zms-ad-reporting/scripts/backup-db.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/zms/zms-ad-reporting</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>/Users/zms</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Hour</key>
+    <integer>3</integer>
+    <key>Minute</key>
+    <integer>15</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/zms/Library/Logs/zms-ads/backup-db.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/zms/Library/Logs/zms-ads/backup-db.log</string>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>Nice</key>
+  <integer>5</integer>
+</dict>
+</plist>

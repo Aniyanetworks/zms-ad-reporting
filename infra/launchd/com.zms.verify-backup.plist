@@ -1,0 +1,42 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Weekly restore test of the newest DB dump into a throwaway Postgres container
+  (Sundays 04:30 local, after the config bundle) — LaunchAgent TEMPLATE.
+  Install like com.zms.backup-db.plist. Needs AGE_IDENTITY (private key path) in
+  ~/.config/zms/backup.env when dumps are encrypted. Check the log for "verify OK".
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.zms.verify-backup</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/zms/zms-ad-reporting/scripts/verify-backup.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/zms/zms-ad-reporting</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>/Users/zms</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>4</integer>
+    <key>Minute</key>
+    <integer>30</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/zms/Library/Logs/zms-ads/verify-backup.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/zms/Library/Logs/zms-ads/verify-backup.log</string>
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

@@ -1,0 +1,60 @@
+# STAGING overlay — always combined with docker-compose.yml AND an explicit project name.
+#
+#   docker compose -p zms-ads-staging -f docker-compose.yml -f compose.staging.yml up -d --wait --remove-orphans
+#   docker compose -p zms-ads-staging -f docker-compose.yml -f compose.staging.yml ps
+#
+# Without `-p zms-ads-staging` compose would reuse the production project name
+# (directory name) and replace the production containers. scripts/deploy.sh staging
+# <sha> always passes it. The runtime image tag (IMAGE_TAG) is the same image as
+# production would get for that sha; only the web bundle differs (NEXT_PUBLIC_ENVIRONMENT).
+#
+# Ports: web 3011, api 8011, redis 6381 (all 127.0.0.1). Cloudflare Tunnel maps
+# staging-adbuildout.contractorscalingblueprint.com -> :3011 (behind Cloudflare Access).
+# Secrets: backend/.env.staging (override with BACKEND_ENV_FILE) — its own Supabase
+# project, never production tokens. Web build args: root .env.staging via
+# `docker compose --env-file .env.staging ...` (deploy.sh does this).
+
+services:
+  redis:
+    container_name: zms-ads-stg-redis
+    ports:
+      - "127.0.0.1:6381:6379"
+
+  api:
+    container_name: zms-ads-stg-api
+    env_file:
+      - ${BACKEND_ENV_FILE:-./backend/.env.staging}
+    environment:
+      ENVIRONMENT: staging
+    ports:
+      - "127.0.0.1:8011:8000"
+
+  celery-worker:
+    container_name: zms-ads-stg-celery-worker
+    env_file:
+      - ${BACKEND_ENV_FILE:-./backend/.env.staging}
+    environment:
+      ENVIRONMENT: staging
+
+  celery-beat:
+    container_name: zms-ads-stg-celery-beat
+    env_file:
+      - ${BACKEND_ENV_FILE:-./backend/.env.staging}
+    environment:
+      ENVIRONMENT: staging
+
+  web:
+    container_name: zms-ads-stg-web
+    build:
+      args:
+        NEXT_PUBLIC_ENVIRONMENT: staging
+    environment:
+      NEXT_PUBLIC_ENVIRONMENT: staging
+      # No public setter hostname on staging; an unused name keeps the guard inert.
+      LEADERBOARD_HOST: ${LEADERBOARD_HOST:-setter-staging.invalid}
+    ports:
+      - "127.0.0.1:3011:3000"
+
+volumes:
+  redis-data:
+    name: zms-ads-staging_redis-data

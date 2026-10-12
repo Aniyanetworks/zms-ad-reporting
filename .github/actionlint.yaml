@@ -1,0 +1,4 @@
+# actionlint config — custom labels of the Mac mini self-hosted runner (scripts/install-runner.sh)
+self-hosted-runner:
+  labels:
+    - macmini

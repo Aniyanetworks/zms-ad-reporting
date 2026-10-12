@@ -1,0 +1,41 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Weekly encrypted host-config bundle (Sundays 04:00 local) — LaunchAgent TEMPLATE.
+  Install like com.zms.backup-db.plist (replace /Users/zms as needed). AGE_RECIPIENT in
+  ~/.config/zms/backup.env is required: the bundle is pure secrets.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.zms.backup-config</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>/Users/zms/zms-ad-reporting/scripts/backup-config.sh</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/zms/zms-ad-reporting</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>/usr/local/bin:/opt/homebrew/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    <key>HOME</key>
+    <string>/Users/zms</string>
+  </dict>
+  <key>StartCalendarInterval</key>
+  <dict>
+    <key>Weekday</key>
+    <integer>0</integer>
+    <key>Hour</key>
+    <integer>4</integer>
+    <key>Minute</key>
+    <integer>0</integer>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>/Users/zms/Library/Logs/zms-ads/backup-config.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/zms/Library/Logs/zms-ads/backup-config.log</string>
+  <key>RunAtLoad</key>
+  <false/>
+</dict>
+</plist>

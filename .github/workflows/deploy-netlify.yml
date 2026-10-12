@@ -1,0 +1,45 @@
+# Frontend → Netlify, built here and uploaded with the Netlify CLI.
+#
+# Why not let Netlify build from Git: on the Free plan Netlify only builds commits
+# authored by a verified team member ("Unrecognized Git contributor" otherwise),
+# which blocks every commit from this shared Mac. CLI uploads are not subject to
+# that policy, cost no Netlify build minutes, and still run netlify.toml's Next.js
+# plugin locally (`deploy --build`). Netlify's own Git builds are stopped for the
+# site so they don't produce noisy failed deploys.
+name: Deploy frontend to Netlify
+
+on:
+  push:
+    branches: [main]
+    paths: ["frontend/**", "netlify.toml", ".github/workflows/deploy-netlify.yml"]
+  workflow_dispatch:
+
+concurrency:
+  group: netlify-production
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - name: Build with netlify.toml (Next.js runtime plugin) and publish to production
+        run: npx --yes netlify-cli@latest deploy --build --prod --context production --message "GitHub ${GITHUB_SHA::7}"
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ vars.NETLIFY_SITE_ID }}
+          NEXT_PUBLIC_SUPABASE_URL: ${{ secrets.NEXT_PUBLIC_SUPABASE_URL }}
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
+          API_URL: https://api-ads.contractorscalingblueprint.com
+          NEXT_PUBLIC_ENVIRONMENT: production
+          NEXT_PUBLIC_GIT_SHA: ${{ github.sha }}
+          NEXT_TELEMETRY_DISABLED: "1"

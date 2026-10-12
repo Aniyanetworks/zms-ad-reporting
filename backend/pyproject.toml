@@ -1,0 +1,59 @@
+[project]
+name = "zms-ads-api"
+version = "0.1.0"
+description = "ZMS Ads Intelligence Dashboard — FastAPI backend + Celery sync jobs"
+requires-python = ">=3.11,<3.13"
+dependencies = [
+    "fastapi[standard]>=0.115",
+    "celery[redis]>=5.4",
+    "redis>=5.0",
+    "pydantic-settings>=2.5",
+    "pyjwt[crypto]>=2.9",
+    "slowapi>=0.1.9",
+    "anthropic>=1.7",
+    "pillow>=11",
+    "python-multipart>=0.0.9",
+    "asyncpg>=0.29",
+    "psycopg2-binary>=2.9",
+    "httpx>=0.27",
+    "pendulum>=3.0",
+    "humanize>=4.0",
+    # dlt + verified-source deps (facebook_ads / google_ads sources are vendored in-repo)
+    "dlt[postgres]>=1.30",
+    "facebook-business>=16.0.2",
+    "google-ads>=25.0",
+    "google-api-python-client>=2.0",
+    # Setter leaderboard: the commission tracker is an .xlsx stored in Drive
+    "openpyxl>=3.1",
+    # GoHighLevel official SDK (API v2, async-first)
+    "gohighlevel-api-client>=3.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8",
+    "pytest-asyncio>=0.24",
+    "ruff>=0.6",
+    "httpx>=0.27",
+    "pip-audit>=2.7",
+]
+
+[tool.setuptools]
+packages = ["app", "facebook_ads", "google_ads"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]
+
+[tool.ruff]
+line-length = 110
+target-version = "py312"
+extend-exclude = ["facebook_ads", "google_ads", "_storage", "build"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "B", "UP", "S"]
+ignore = ["S101", "S608", "B008", "E501", "UP007", "UP035", "UP045"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106"]

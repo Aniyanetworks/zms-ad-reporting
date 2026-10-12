@@ -1,0 +1,25 @@
+# Build context for backend/Dockerfile. tests/ is intentionally NOT ignored (test stage).
+.env
+.env.*
+!.env.example
+!.env.staging.example
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+_storage/
+.venv/
+build/
+dist/
+*.egg-info/
+.dlt/secrets.toml
+.dlt/*.secrets.toml
+.dlt/pipelines/
+.dlt/state/
+.dlt/data/
+*.duckdb
+*.wal
+.git/
+.DS_Store

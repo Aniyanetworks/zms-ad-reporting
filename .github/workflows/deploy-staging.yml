@@ -1,0 +1,74 @@
+name: Deploy staging
+
+# Every push to main is deployed to the staging stack on the Mac mini (project
+# zms-ads-staging, ports 3011/8011/6381, https://staging-adbuildout.contractorscalingblueprint.com).
+# Runs on the self-hosted runner installed by scripts/install-runner.sh (user `deploy`).
+# scripts/deploy.sh performs the authoritative localhost health gate and auto-rollback.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      sha:
+        description: "Commit to deploy (default: the branch tip)"
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy to staging
+    runs-on: [self-hosted, macmini]
+    environment: staging
+    timeout-minutes: 40
+    env:
+      TARGET_SHA: ${{ inputs.sha || github.sha }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ inputs.sha || github.sha }}
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Runner state locations (outside the workspace, which checkout wipes)
+        run: |
+          set -euo pipefail
+          echo "ZMS_DEPLOY_STATE_DIR=$HOME/.zms-ads/deploy" >> "$GITHUB_ENV"
+          echo "ZMS_SECRETS_DIR=$HOME/.zms-ads/secrets" >> "$GITHUB_ENV"
+          mkdir -p "$HOME/.zms-ads/deploy"
+          test -f "$HOME/.zms-ads/secrets/staging/backend.env" || { echo "::error::~/.zms-ads/secrets/staging/backend.env missing on runner"; exit 1; }
+          test -f "$HOME/.zms-ads/secrets/staging/web.env"     || { echo "::error::~/.zms-ads/secrets/staging/web.env missing on runner"; exit 1; }
+
+      - name: Deploy
+        run: scripts/deploy.sh staging "$TARGET_SHA"
+
+      - name: Smoke test via Cloudflare (informational)
+        # staging-adbuildout.* sits behind Cloudflare Access, so an unauthenticated probe may
+        # get a 302/403 from Cloudflare. The localhost checks inside deploy.sh are authoritative.
+        run: |
+          set -uo pipefail
+          url="https://staging-adbuildout.contractorscalingblueprint.com/healthz"
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 15 "$url" || echo 000)
+          echo "GET $url -> $code"
+          if [ "$code" = "200" ]; then
+            echo "public smoke test OK"
+          else
+            echo "::warning::public probe returned $code (Cloudflare Access or DNS); localhost health gate already passed"
+          fi
+
+      - name: Summary
+        if: always()
+        run: |
+          {
+            echo "### Staging deploy"
+            echo "- sha: \`$TARGET_SHA\`"
+            echo "- current: \`$(cat "$ZMS_DEPLOY_STATE_DIR/staging.current" 2>/dev/null || echo '?')\`"
+            echo "- previous: \`$(cat "$ZMS_DEPLOY_STATE_DIR/staging.previous" 2>/dev/null || echo '-')\`"
+          } >> "$GITHUB_STEP_SUMMARY"

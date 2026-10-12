@@ -1,0 +1,6 @@
+# dlt runtime config — credentials are passed explicitly in code (app/services/meta.py,
+# app/services/google.py); no secrets.toml needed.
+
+[runtime]
+log_level = "WARNING"
+dlthub_telemetry = false

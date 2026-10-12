@@ -1,0 +1,5 @@
+# Keep LF everywhere (shell scripts run on macOS/Linux).
+* text=auto eol=lf
+*.pdf binary
+*.png binary
+*.ico binary

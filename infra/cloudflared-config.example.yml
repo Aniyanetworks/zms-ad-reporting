@@ -1,0 +1,36 @@
+# Cloudflare Tunnel ingress for the Ads dashboard — REFERENCE ONLY.
+#
+# The tunnel (b9929fe5-…) is REMOTELY MANAGED: its ingress rules live in the Cloudflare
+# dashboard (Zero Trust > Networks > Tunnels > <tunnel> > Public Hostname), not in
+# ~/.cloudflared/config.yml on the Mac mini. The cloudflared LaunchDaemon just runs
+# `cloudflared --config /Users/zms/.cloudflared/config.yml tunnel run` (LaunchDaemon com.cloudflare.cloudflared; ingress below is ignored while the tunnel is remote-managed). Edit the rules in the dashboard so they match the
+# table below; this file documents the intended state and doubles as a local config
+# should the tunnel ever be switched back to a locally-managed one.
+#
+# DNS: each hostname is a proxied CNAME to <TUNNEL_ID>.cfargotunnel.com (created
+# automatically when a public hostname is added in the dashboard, or with
+#   cloudflared tunnel route dns <TUNNEL_NAME> <hostname>
+# for a locally-managed tunnel).
+#
+#   hostname                                          -> origin            notes
+#   ads.contractorscalingblueprint.com                -> localhost:3010    production (current primary)
+#   adbuildout.contractorscalingblueprint.com         -> localhost:3010    production (new primary, Phase 3)
+#   setter.contractorscalingblueprint.com             -> localhost:3010    same container; LEADERBOARD_HOST limits it to /leaderboard
+#   staging-adbuildout.contractorscalingblueprint.com -> localhost:3011    staging stack (compose project zms-ads-staging);
+#                                                                          protect with a Cloudflare Access policy (Zeal emails, one-time PIN)
+#
+# The API is never exposed directly: /api/* is proxied by Next.js inside the container.
+
+tunnel: <TUNNEL_ID>
+credentials-file: /Users/zms/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  - hostname: ads.contractorscalingblueprint.com
+    service: http://localhost:3010
+  - hostname: adbuildout.contractorscalingblueprint.com
+    service: http://localhost:3010
+  - hostname: setter.contractorscalingblueprint.com
+    service: http://localhost:3010
+  - hostname: staging-adbuildout.contractorscalingblueprint.com
+    service: http://localhost:3011
+  - service: http_status:404

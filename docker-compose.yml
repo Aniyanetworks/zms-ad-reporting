@@ -1,0 +1,173 @@
+# ZMS Ads Intelligence dashboard — environment-agnostic compose base.
+#
+# Never run this file alone: it has no ports, container names or env files. Pair it
+# with exactly one overlay:
+#
+#   production (compose project = directory name "zms-ad-reporting", what runs today)
+#     docker compose -f docker-compose.yml -f compose.production.yml up -d --wait
+#
+#   staging (own project name, own container names, own ports 3011/8011/6381)
+#     docker compose -p zms-ads-staging -f docker-compose.yml -f compose.staging.yml up -d --wait
+#
+# scripts/deploy.sh wraps both invocations (build tagged IMAGE_TAG=<git sha>, health
+# gate, automatic rollback). Variables: IMAGE_TAG (image tag, default latest),
+# GIT_SHA (baked into the web build for /healthz), NEXT_PUBLIC_SUPABASE_URL/ANON_KEY
+# (root .env), NEXT_PUBLIC_ENVIRONMENT (set by the overlay).
+#
+# Hardening applied to every service: non-root user (from the image), read-only root
+# filesystem with tmpfs for the few writable paths, no-new-privileges, all Linux
+# capabilities dropped, 30 s graceful stop, bounded json-file logs, health checks.
+
+x-logging: &default-logging
+  driver: json-file
+  options:
+    max-size: "20m"
+    max-file: "5"
+
+x-hardening: &hardening
+  restart: unless-stopped
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  stop_grace_period: 30s
+  logging: *default-logging
+
+x-backend-env: &backend-env
+  GIT_SHA: ${GIT_SHA:-dev}          # reported by /api/health; deploy.sh sets it
+  REDIS_URL: redis://redis:6379/0
+  CELERY_BROKER_URL: redis://redis:6379/1
+  CELERY_RESULT_BACKEND: redis://redis:6379/2
+
+services:
+  redis:
+    <<: *hardening
+    # docker buildx imagetools inspect redis:7-alpine  (multi-arch index digest)
+    image: redis:7-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+    # Run as redis:redis directly (uid 999 / gid 1000 in the official image). The stock
+    # entrypoint would otherwise start as root and gosu-drop, which needs the
+    # SETUID/SETGID capabilities we drop. /data on the existing volume is owned by 999.
+    user: "999:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  api:
+    <<: *hardening
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: runtime
+    image: zms-ads-api:${IMAGE_TAG:-latest}
+    environment:
+      <<: *backend-env
+    read_only: true
+    tmpfs:
+      - /tmp:size=1g
+    expose:
+      - "8000"
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/api/health/live', timeout=3).status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  celery-worker:
+    <<: *hardening
+    # Same image as api (built once by the api service); never pulled from a registry.
+    image: zms-ads-api:${IMAGE_TAG:-latest}
+    pull_policy: never
+    environment:
+      <<: *backend-env
+    read_only: true
+    tmpfs:
+      - /tmp:size=2g          # dlt extract/normalize working files live here
+    depends_on:
+      redis:
+        condition: service_healthy
+    command: ["celery", "-A", "app.celery_app", "worker", "--loglevel=info", "--concurrency=4", "--soft-time-limit=3300", "--time-limit=3600"]
+    healthcheck:
+      # $$ -> literal $ for compose; the container shell expands $HOSTNAME.
+      test: ["CMD-SHELL", "celery -A app.celery_app inspect ping -d celery@$$HOSTNAME --timeout 10 > /dev/null 2>&1"]
+      interval: 60s
+      timeout: 20s
+      retries: 3
+      start_period: 60s
+
+  celery-beat:
+    <<: *hardening
+    image: zms-ads-api:${IMAGE_TAG:-latest}
+    pull_policy: never
+    environment:
+      <<: *backend-env
+    read_only: true
+    tmpfs:
+      - /tmp
+    depends_on:
+      redis:
+        condition: service_healthy
+    # Schedule DB on the /tmp tmpfs (rootfs is read-only). It is rebuilt from
+    # app.celery_app.beat_schedule at start, so losing it costs nothing.
+    command: ["celery", "-A", "app.celery_app", "beat", "--loglevel=info", "--schedule", "/tmp/celerybeat-schedule", "--pidfile", "/tmp/celerybeat.pid"]
+    healthcheck:
+      # python:3.12-slim has no procps (pgrep); beat rewrites its schedule DB at least
+      # every 3 min (sync_every) so a fresh mtime proves the scheduler loop is alive.
+      # Liveness = the beat process named in the pidfile is alive. (The schedule file's
+      # mtime is NOT a signal: beat only rewrites it when the schedule changes.)
+      test: ["CMD", "python", "-c", "import os,sys; p=open('/tmp/celerybeat.pid').read().strip(); sys.exit(0 if os.path.exists(f'/proc/{p}') and b'beat' in open(f'/proc/{p}/cmdline','rb').read() else 1)"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 90s
+
+  web:
+    <<: *hardening
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+        NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+        NEXT_PUBLIC_ENVIRONMENT: ${NEXT_PUBLIC_ENVIRONMENT:-production}
+        NEXT_PUBLIC_GIT_SHA: ${GIT_SHA:-dev}
+        API_URL: http://api:8000
+    image: zms-ads-web:${IMAGE_TAG:-latest}
+    environment:
+      API_URL: http://api:8000
+      NEXT_PUBLIC_SUPABASE_URL: ${NEXT_PUBLIC_SUPABASE_URL}
+      NEXT_PUBLIC_SUPABASE_ANON_KEY: ${NEXT_PUBLIC_SUPABASE_ANON_KEY}
+      NEXT_PUBLIC_ENVIRONMENT: ${NEXT_PUBLIC_ENVIRONMENT:-production}
+      NEXT_PUBLIC_GIT_SHA: ${GIT_SHA:-dev}
+      # Hostname that serves only the public /leaderboard page (setter leaderboard)
+      LEADERBOARD_HOST: ${LEADERBOARD_HOST:-setter.contractorscalingblueprint.com}
+    read_only: true
+    tmpfs:
+      - /tmp
+      - /app/.next/cache        # Next.js ISR/fetch cache + image cache
+    expose:
+      - "3000"
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:3000/healthz > /dev/null || exit 1"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+volumes:
+  redis-data:
