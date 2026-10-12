@@ -65,7 +65,7 @@ const requireRange = (q) => {
 // pattern?, default?, ge?, le?, int? } }. Unknown keys are rejected (extra="forbid") unless allowExtra; strings are capped at 500 chars
 // (str_max_length). partial=true validates only the keys present (exclude_unset). Returns
 // { value } or a fail().
-const checkBody = (spec, body, partial = false, allowExtra = false) => {
+const checkBody = (spec, body, partial = false, allowExtra = false, strMax = 500) => {
   if (body === null || typeof body !== 'object' || Array.isArray(body)) {
     return invalid(['body'], 'Input should be a valid dictionary', 'dict_type');
   }
@@ -89,7 +89,7 @@ const checkBody = (spec, body, partial = false, allowExtra = false) => {
     }
     if (f.type === 'str') {
       if (typeof v !== 'string') { errors.push({ type: 'string_type', loc: ['body', k], msg: 'Input should be a valid string' }); continue; }
-      const max = Math.min(f.max ?? 500, 500);
+      const max = Math.min(f.max ?? strMax, strMax);
       if (f.min && v.length < f.min) errors.push({ type: 'string_too_short', loc: ['body', k], msg: 'String should have at least ' + f.min + ' character' + (f.min === 1 ? '' : 's') });
       if (v.length > max) errors.push({ type: 'string_too_long', loc: ['body', k], msg: 'String should have at most ' + max + ' characters' });
       if (f.pattern && !new RegExp(f.pattern).test(v)) errors.push({ type: 'string_pattern_mismatch', loc: ['body', k], msg: "String should match pattern '" + f.pattern + "'" });
@@ -99,12 +99,27 @@ const checkBody = (spec, body, partial = false, allowExtra = false) => {
       if (f.ge !== undefined && v < f.ge) errors.push({ type: 'greater_than_equal', loc: ['body', k], msg: 'Input should be greater than or equal to ' + f.ge });
       if (f.le !== undefined && v > f.le) errors.push({ type: 'less_than_equal', loc: ['body', k], msg: 'Input should be less than or equal to ' + f.le });
       if (f.int && !Number.isInteger(v)) errors.push({ type: 'int_from_float', loc: ['body', k], msg: 'Input should be a valid integer, got a number with a fractional part' });
+    } else if (f.type === 'dict') {
+      if (typeof v !== 'object' || Array.isArray(v)) { errors.push({ type: 'dict_type', loc: ['body', k], msg: 'Input should be a valid dictionary' }); continue; }
     } else if (f.type === 'bool') {
       if (typeof v !== 'boolean') { errors.push({ type: 'bool_parsing', loc: ['body', k], msg: 'Input should be a valid boolean' }); continue; }
     }
+    if (f.enum && !f.enum.includes(v)) { errors.push({ type: 'literal_error', loc: ['body', k], msg: 'Input should be ' + f.enum.map((e) => "'" + e + "'").join(', ').replace(/, ([^,]*)$/, ' or $1') }); continue; }
     out[k] = v;
   }
   return errors.length ? fail(422, errors) : { value: out };
+};
+
+// list[Model] body: checkBody per item, error locations become ['body', index, field].
+const checkItems = (spec, body, allowExtra = false, strMax = 500) => {
+  if (!Array.isArray(body)) return invalid(['body'], 'Input should be a valid list', 'list_type');
+  const errors = [], values = [];
+  body.forEach((item, i) => {
+    const r = checkBody(spec, item, false, allowExtra, strMax);
+    if (r.__fail) for (const e of r.__fail.detail) errors.push({ ...e, loc: ['body', i, ...e.loc.slice(1)] });
+    else values.push(r.value);
+  });
+  return errors.length ? fail(422, errors) : { value: values };
 };
 
 // audit_log context from the webhook request (core/audit.py client_ip + user agent)

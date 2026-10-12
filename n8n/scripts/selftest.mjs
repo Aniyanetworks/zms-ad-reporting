@@ -25,6 +25,11 @@ const BODY = {
   "clients-update": { name: "Selftest" },
   "service-targets-put": { service: "Selftest", platform: "meta", cpl_green: 50 },
   "recommendations-bulk-approve": { ids: [1, 2] },
+  "plugin-benchmarks": [{ trade: "roofing", metric: "cpl", window_days: 30, source: "internal", median: 80 }],
+  "plugin-triage-runs": { client_id: "00000000-0000-0000-0000-000000000000", window_start: "2026-09-01", window_end: "2026-09-30", score: "green", raw: {} },
+  "plugin-recommendations": [{ client_id: "00000000-0000-0000-0000-000000000000", entity_type: "campaign", action: "pause", reason: "selftest", evidence: {} }],
+  "plugin-recommendation-patch": { status: "executed", actor: "selftest", verification: {} },
+  "plugin-notify": { client_slug: "selftest", text: "selftest" },
 };
 
 const cases = [];

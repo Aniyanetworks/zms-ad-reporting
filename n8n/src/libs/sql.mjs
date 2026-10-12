@@ -2,10 +2,10 @@
 
 // audit_log insert (core/audit.py record()). ctx = SQL expression of the jsonb built by
 // auditCtx() in the Validate step: { actor_id, actor_email, ip, user_agent }.
-export const auditInsert = ({ action, entityType, entityId, clientId = "null", before = "null", after = "null", from = "", ctx }) => `
+export const auditInsert = ({ action, entityType, entityId, clientId = "null", before = "null", after = "null", from = "", ctx, actorType = "'user'" }) => `
 insert into audit_log (actor_type, actor_id, actor_email, action, entity_type, entity_id,
                        client_id, before, after, request_id, ip, user_agent, environment)
-select 'user', (${ctx}->>'actor_id')::uuid, ${ctx}->>'actor_email', ${action}, ${entityType}, ${entityId},
+select ${actorType}, (${ctx}->>'actor_id')::uuid, ${ctx}->>'actor_email', ${action}, ${entityType}, ${entityId},
        ${clientId}, ${before}, ${after}, null, (${ctx}->>'ip')::inet, ${ctx}->>'user_agent', 'production'
 ${from}`;
 

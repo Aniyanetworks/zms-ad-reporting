@@ -40,7 +40,7 @@ const ifTrue = (expr) => ({
   options: {},
 });
 
-const jsonResponse = (bodyExpr, statusExpr) => ({
+const jsonResponse = (bodyExpr, statusExpr, extraHeaders = []) => ({
   respondWith: "text",
   responseBody: `={{ ${bodyExpr} === undefined ? '' : JSON.stringify(${bodyExpr}) }}`,
   options: {
@@ -49,6 +49,7 @@ const jsonResponse = (bodyExpr, statusExpr) => ({
       entries: [
         { name: "Content-Type", value: "application/json" },
         { name: "Cache-Control", value: "no-store" },
+        ...extraHeaders,
       ],
     },
   },
@@ -108,7 +109,50 @@ export function endpoint(def) {
   };
 
   let last = webhook;
-  if (def.auth !== "none") {
+  if (def.auth === "plugin") {
+    // routers/plugin.py require_plugin_token: shared bearer token, stored in app_secrets.
+    const readToken = add({
+      name: "Read token",
+      type: "n8n-nodes-base.code",
+      typeVersion: 2,
+      parameters: {
+        jsCode: "const a = ($json.headers || {}).authorization || '';\nreturn [{ json: { token: a.replace(/^Bearer /, '').trim() } }];",
+      },
+    });
+    link(last, readToken);
+    const check = add({
+      name: "Check plugin token",
+      type: "n8n-nodes-base.postgres",
+      typeVersion: 2.5,
+      credentials: { postgres: CREDENTIALS.postgres },
+      parameters: {
+        operation: "executeQuery",
+        query:
+          "select exists (select 1 from app_secrets where key = 'plugin_api_token' and value <> '') as configured, " +
+          "exists (select 1 from app_secrets where key = 'plugin_api_token' and value <> '' and value = $1) as ok",
+        options: { queryReplacement: "={{ [$json.token] }}" },
+      },
+    });
+    link(readToken, check);
+    const buildUser = add({
+      name: "Build user",
+      type: "n8n-nodes-base.code",
+      typeVersion: 2,
+      parameters: {
+        jsCode: [
+          "if (!$json.configured) return [{ json: { error: { status: 503, detail: 'PLUGIN_API_TOKEN not configured' } } }];",
+          "if (!$json.ok || !$('Read token').first().json.token) return [{ json: { error: { status: 401, detail: 'Invalid plugin token' } } }];",
+          "return [{ json: { user: { id: null, email: null, role: 'plugin', name: 'zeal-paid-ads plugin', plugin: true } } }];",
+        ].join("\n"),
+      },
+    });
+    link(check, buildUser);
+    const authorized = add({ name: "Authorized?", type: "n8n-nodes-base.if", typeVersion: 2, parameters: ifTrue("!$json.error") });
+    link(buildUser, authorized);
+    nodes.push({ id: uuid(`${name}/${respondError.name}`), position: [x, 300], ...respondError });
+    link(authorized, respondError.name, 1);
+    last = authorized;
+  } else if (def.auth !== "none") {
     const allowed = Array.isArray(def.auth) ? def.auth : null;
     const forbidden = allowed
       ? allowed.length === 1 && allowed[0] === "admin"
@@ -227,7 +271,7 @@ export function endpoint(def) {
       parameters: {
         jsCode: [...prelude, def.validate]
           .join("\n")
-          .replace(/^/, "const r = (() => {\n")
+          .replace(/^/, "const r = await (async () => {\n")
           .concat("\n})();\nreturn [{ json: r && r.__fail ? { error: r.__fail } : { value: r ?? null } }];"),
       },
     });
@@ -268,7 +312,7 @@ export function endpoint(def) {
             def.onDbError ?? "return { status: 500, body: { detail: 'Internal Server Error' } };",
           ]
             .join("\n")
-            .replace(/^/, "const out = (() => {\n")
+            .replace(/^/, "const out = await (async () => {\n")
             .concat("\n})();\nreturn [{ json: out }];"),
         },
       },
@@ -286,7 +330,7 @@ export function endpoint(def) {
     parameters: {
       jsCode: [...prelude, def.sql ? "const data = $json.data;" : "const data = null;", def.shape]
         .join("\n")
-        .replace(/^/, "const out = (() => {\n")
+        .replace(/^/, "const out = await (async () => {\n")
         .concat("\n})();\nreturn [{ json: out }];"),
     },
   });
@@ -296,7 +340,9 @@ export function endpoint(def) {
     name: "Respond",
     type: "n8n-nodes-base.respondToWebhook",
     typeVersion: 1.1,
-    parameters: jsonResponse("$json.body", "$json.status ?? 200"),
+    // def.headers: extra response headers whose values come from Shape output (`headers` object).
+    parameters: jsonResponse("$json.body", "$json.status ?? 200",
+      (def.headers || []).map((h) => ({ name: h, value: `={{ ($json.headers || {})[${JSON.stringify(h)}] ?? '' }}` }))),
   });
   link(shape, respond);
   if (def.sql) link(dbErrorNode, respond);
