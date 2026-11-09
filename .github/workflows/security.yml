@@ -31,7 +31,7 @@ jobs:
         working-directory: frontend
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
       - run: npm audit --audit-level=high
@@ -54,9 +54,9 @@ jobs:
         language: [javascript-typescript, python]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: github/codeql-action/init@311b4ee155dcdab395044f00946f664bd51ff173 # v4
+      - uses: github/codeql-action/init@fbfa9f37476c0024508d051f3c34fcca3366b0e2 # v4
         with:
           languages: ${{ matrix.language }}
-      - uses: github/codeql-action/analyze@311b4ee155dcdab395044f00946f664bd51ff173 # v4
+      - uses: github/codeql-action/analyze@fbfa9f37476c0024508d051f3c34fcca3366b0e2 # v4
         with:
           category: /language:${{ matrix.language }}
